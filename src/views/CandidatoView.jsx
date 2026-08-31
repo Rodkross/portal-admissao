@@ -1,13 +1,68 @@
 import { useRef, useState } from 'react'
 import { docsPara, maskCPF, onlyDigits, statusDocumentos, documentosFaltantes, newId } from '../lib/storage'
+import FichaCandidato from './FichaCandidato'
 
 const MAX_MB = 5
+
+const ETAPAS = [
+  { n: 1, titulo: 'Dados pessoais', desc: 'Complete sua ficha' },
+  { n: 2, titulo: 'Documentos', desc: 'Envie as digitalizações' },
+  { n: 3, titulo: 'Revisão e envio', desc: 'Confirme para o RH' },
+]
+
+function Stepper({ etapa, maxEtapa, irPara }) {
+  return (
+    <div className="card text-left">
+      <div className="flex items-center">
+        {ETAPAS.map((e, i) => {
+          const concluida = e.n < etapa
+          const atual = e.n === etapa
+          const acessivel = e.n <= maxEtapa
+          return (
+            <div key={e.n} className={`flex items-center ${i < ETAPAS.length - 1 ? 'flex-1' : ''}`}>
+              <button
+                type="button"
+                disabled={!acessivel || atual}
+                onClick={() => acessivel && irPara(e.n)}
+                className={`flex items-center gap-2 shrink-0 ${acessivel && !atual ? 'cursor-pointer group' : 'cursor-default'}`}
+                title={acessivel ? (atual ? 'Etapa atual' : 'Voltar para esta etapa') : 'Conclua a etapa anterior primeiro'}
+              >
+                <span
+                  className={`size-9 shrink-0 rounded-full flex items-center justify-center text-sm font-bold transition ${
+                    atual
+                      ? 'bg-brand-600 text-white shadow-[0_4px_12px_rgb(39_69_228/0.35)] ring-4 ring-brand-100'
+                      : concluida
+                        ? 'bg-emerald-500 text-white group-hover:bg-emerald-600'
+                        : 'bg-slate-100 text-slate-400 border border-slate-200'
+                  }`}
+                >
+                  {concluida ? '✓' : e.n}
+                </span>
+                <span className="hidden sm:block">
+                  <span className={`block text-xs font-semibold leading-tight ${atual ? 'text-brand-700' : concluida ? 'text-emerald-700' : 'text-slate-400'}`}>{e.titulo}</span>
+                  <span className="block text-[10px] text-slate-400 leading-tight">{e.desc}</span>
+                </span>
+              </button>
+              {i < ETAPAS.length - 1 && (
+                <div className={`flex-1 h-0.5 mx-2 rounded ${e.n < etapa ? 'bg-emerald-400' : 'bg-slate-200'}`} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export default function CandidatoView({ db, cpf, atualizarCandidato }) {
   const [digitado, setDigitado] = useState('')
   const [erro, setErro] = useState('')
   const [erroLocal, setErroLocal] = useState('')
   const arquivoRef = useRef(null)
+
+  // derivado ANTES dos hooks (usado no estado da etapa)
+  const cpfAlvo = cpf || onlyDigits(digitado)
+  const candidato = db.candidatos.find((c) => c.cpf === cpfAlvo)
 
   // estado do modal de upload
   const [uploadAberto, setUploadAberto] = useState(false)
@@ -20,9 +75,16 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
   const [envioAberto, setEnvioAberto] = useState(false)
   const [aceiteLgpd, setAceiteLgpd] = useState(false)
   const [aceiteVeracidade, setAceiteVeracidade] = useState(false)
+  // wizard: etapa atual e maior etapa liberada (persistidas no candidato)
+  const [etapa, setEtapa] = useState(() => candidato?.etapa || 1)
+  const [maxEtapa, setMaxEtapa] = useState(() => candidato?.etapa || 1)
 
-  const cpfAlvo = cpf || onlyDigits(digitado)
-  const candidato = db.candidatos.find((c) => c.cpf === cpfAlvo)
+  function irPara(n) {
+    setEtapa(n)
+    setMaxEtapa((m) => Math.max(m, n))
+    atualizarCandidato(candidato.id, (c) => ({ ...c, etapa: n }))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   if (!candidato) {
     return (
@@ -253,8 +315,30 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
         </div>
       </section>
 
-      {erroLocal && <p className="alert-error">{erroLocal}</p>}
+      <Stepper etapa={etapa} maxEtapa={maxEtapa} irPara={irPara} />
 
+      {erroLocal && etapa === 2 && <p className="alert-error">{erroLocal}</p>}
+
+      {/* ---------- ETAPA 1: ficha de dados pessoais ---------- */}
+      {etapa === 1 && (
+        <>
+          <FichaCandidato key={candidato.id} candidato={candidato} atualizarCandidato={atualizarCandidato} onSalvo={() => irPara(2)} />
+          <div className="flex justify-end">
+            <button
+              className="btn-primary"
+              disabled={!candidato.ficha?.atualizadoEm}
+              title={candidato.ficha?.atualizadoEm ? '' : 'Salve a ficha para continuar'}
+              onClick={() => irPara(2)}
+            >
+              Continuar para documentos →
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ---------- ETAPA 2: documentos ---------- */}
+      {etapa === 2 && (
+        <>
       {/* Validações — resumo compacto acima do envio */}
       <section className="text-left">
         <div className="flex items-center justify-between px-1 mb-1.5">
@@ -384,6 +468,24 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
         </section>
       )}
 
+      {/* navegação da etapa 2 */}
+          <div className="flex justify-between">
+            <button onClick={() => irPara(1)} className="btn-outline">← Voltar</button>
+            <button
+              onClick={() => irPara(3)}
+              className="btn-primary"
+              disabled={arquivos.length === 0}
+              title={arquivos.length === 0 ? 'Envie pelo menos um documento para continuar' : ''}
+            >
+              Revisar e enviar →
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ---------- ETAPA 3: revisão e envio ao RH ---------- */}
+      {etapa === 3 && (
+        <>
       {/* Rodapé */}
       <section className="card">
         {faltantes.length === 0 ? (
@@ -398,16 +500,24 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
         <button
           onClick={() => { setAceiteLgpd(false); setAceiteVeracidade(false); setEnvioAberto(true) }}
           className="btn-primary mt-3"
-          disabled={arquivos.length === 0}
+          disabled={arquivos.length === 0 || !candidato.ficha?.atualizadoEm}
         >
           📤 Enviar documentação ao RH
         </button>
+        {!candidato.ficha?.atualizadoEm && (
+          <p className="text-xs text-amber-700 mt-2">Preencha e salve sua ficha de dados pessoais antes de enviar ao RH.</p>
+        )}
         {candidato.envioRH && (
           <p className="text-xs text-slate-500 mt-2">
             Último envio ao RH: {new Date(candidato.envioRH.em).toLocaleString('pt-BR')}
           </p>
         )}
+          <div className="flex justify-start mt-4 pt-4 border-t border-slate-100">
+            <button onClick={() => irPara(2)} className="btn-outline btn-sm">← Corrigir documentos</button>
+          </div>
       </section>
+        </>
+      )}
 
       {/* Modal de envio ao RH — consentimento LGPD */}
       {envioAberto && (

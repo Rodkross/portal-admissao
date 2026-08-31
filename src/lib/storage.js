@@ -40,6 +40,11 @@ export function maskCPF(v) {
     .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2')
 }
 
+export function maskCEP(v) {
+  const d = onlyDigits(v).slice(0, 8)
+  return d.replace(/^(\d{5})(\d{1,3})$/, '$1-$2')
+}
+
 export function maskPhone(v) {
   const d = onlyDigits(v).slice(0, 11)
   if (d.length <= 10) {
@@ -60,7 +65,7 @@ export const DOC_TIPOS = [
   { id: 'cpf_doc', nome: 'CPF', obrigatorio: () => true },
   { id: 'comprovante', nome: 'Comprovante de Residência', obrigatorio: () => true },
   { id: 'titulo', nome: 'Título de Eleitor', obrigatorio: () => true },
-  { id: 'pis', nome: 'PIS', obrigatorio: () => true },
+  { id: 'pis', nome: 'PIS', obrigatorio: (c) => !(c.ficha?.primeiroEmprego) },
   { id: 'reservista', nome: 'Certificado de Reservista', obrigatorio: (c) => c.sexo === 'M' },
   { id: 'cnh', nome: 'Habilitação Categoria A', obrigatorio: (c) => !!c.motociclista },
   { id: 'doc_moto', nome: 'Documento da Motocicleta (CRLV)', obrigatorio: (c) => !!c.motociclista },
