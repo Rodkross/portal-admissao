@@ -1,6 +1,58 @@
 import { useState } from 'react'
 import { maskCPF, maskPhone, waLink, statusDocumentos, documentosFaltantes, docsPara } from '../lib/storage'
-import { gerarFichaPDF } from '../lib/ficha'
+import { gerarFichaPDF, fichaLinhas } from '../lib/ficha'
+
+const CONTRATO_VAZIO = { empresa: '', funcao: '', salario: '', horario: '', folga: '', dataAdmissao: '' }
+
+function ContratoForm({ cand, atualizarCandidato }) {
+  const [form, setForm] = useState(() => ({ ...CONTRATO_VAZIO, ...(cand.contrato || {}) }))
+  const [salvo, setSalvo] = useState(false)
+  // remontado via key={cand.id} no pai — sem necessidade de sincronizar por efeito
+
+  const set = (campo, valor) => { setSalvo(false); setForm((f) => ({ ...f, [campo]: valor })) }
+
+  function salvar() {
+    atualizarCandidato(cand.id, (c) => ({
+      ...c,
+      contrato: { ...form, atualizadoEm: new Date().toISOString() },
+    }))
+    setSalvo(true)
+  }
+
+  const campos = [
+    ['funcao', 'Função *', 'text', 'Ex.: Motoboy'],
+    ['salario', 'Salário *', 'text', 'Ex.: R$ 2.500,00'],
+    ['horario', 'Horário de trabalho *', 'text', 'Ex.: Seg a Sex, 08h às 17h'],
+    ['folga', 'Folga *', 'text', 'Ex.: Domingo e feriados'],
+    ['dataAdmissao', 'Data de admissão *', 'date', ''],
+  ]
+
+  return (
+    <div className="space-y-3">
+      <div className="grid sm:grid-cols-2 gap-3 text-sm">
+        <label className="sm:col-span-2">
+          <span className="text-slate-600">Empresa *</span>
+          <input value={form.empresa} onChange={(e) => set('empresa', e.target.value)} className="input" placeholder="Razão social ou nome fantasia" />
+        </label>
+        {campos.map(([campo, rotulo, tipo, ph]) => (
+          <label key={campo}>
+            <span className="text-slate-600">{rotulo}</span>
+            <input type={tipo} value={form[campo]} onChange={(e) => set(campo, e.target.value)} className="input" placeholder={ph} />
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center gap-3">
+        <button onClick={salvar} className="btn-primary btn-sm" disabled={!form.empresa.trim() || !form.funcao.trim() || !form.salario.trim() || !form.horario.trim() || !form.folga.trim() || !form.dataAdmissao}>
+          Salvar dados contratuais
+        </button>
+        {salvo && <span className="text-xs text-emerald-700 font-medium">✅ Salvo</span>}
+        {cand.contrato?.atualizadoEm && !salvo && (
+          <span className="text-xs text-slate-400">Última atualização: {new Date(cand.contrato.atualizadoEm).toLocaleString('pt-BR')}</span>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function ArquivoPreview({ arquivo }) {
   const [mostrar, setMostrar] = useState(false)
@@ -119,15 +171,48 @@ export default function RhView({ db, atualizarCandidato }) {
             <div>
               <h3 className="text-lg font-bold text-slate-800">{cand.nome}</h3>
               <p className="text-sm text-slate-500">CPF {maskCPF(cand.cpf)} · {maskPhone(cand.telefone)} · {cand.sexo === 'M' ? 'Masculino' : 'Feminino'}{cand.motociclista ? ' · Motociclista' : ''}</p>
+              <p className="text-sm mt-1">
+                <span className="text-slate-400">Empresa: </span>
+                {cand.contrato?.empresa
+                  ? <span className="font-semibold text-brand-700">{cand.contrato.empresa}</span>
+                  : <span className="text-amber-700">não informada</span>}
+                {cand.contrato?.funcao && <span className="text-slate-600"> · {cand.contrato.funcao}</span>}
+              </p>
             </div>
             <div className="flex gap-2">
               <a href={waLink(cand.telefone, msgExigencias(cand))} target="_blank" rel="noreferrer" className="btn-wa btn-sm">
                 📲 Disparar exigências no WhatsApp
               </a>
               <button onClick={() => gerarFichaPDF(cand)} className="btn-outline btn-sm">
-                ⬇ Emitir ficha (PDF)
+                ⬇ Baixar ficha + documentação (PDF)
               </button>
             </div>
+          </div>
+
+          {/* Ficha completa do candidato — visualização antes do download */}
+          <h3 className="section-title px-1 mb-2">Ficha do candidato</h3>
+          {!cand.ficha?.atualizadoEm && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-3">
+              O candidato ainda não preencheu/enviou a ficha de dados pessoais no portal dele.
+            </p>
+          )}
+          <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 mb-6 text-sm">
+            {fichaLinhas(cand).map(([rotulo, valor]) => (
+              <div key={rotulo} className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1">
+                <span className="text-xs text-slate-400 shrink-0">{rotulo}</span>
+                <span className="text-sm text-slate-800 font-medium text-right break-words min-w-0">{valor}</span>
+              </div>
+            ))}
+            <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1 sm:col-span-2">
+              <span className="text-xs text-slate-400 shrink-0">Ficha atualizada em</span>
+              <span className="text-sm text-slate-800 font-medium">{cand.ficha?.atualizadoEm ? new Date(cand.ficha.atualizadoEm).toLocaleString('pt-BR') : '—'}</span>
+            </div>
+          </div>
+
+          {/* Dados contratuais — função, salário, horário, folga, admissão */}
+          <h3 className="section-title px-1 mb-2">Dados contratuais</h3>
+          <div className="card-sm mb-6">
+            <ContratoForm key={cand.id} cand={cand} atualizarCandidato={atualizarCandidato} />
           </div>
 
           {/* Validação por ARQUIVO enviado (um arquivo pode cobrir vários docs) */}

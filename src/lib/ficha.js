@@ -1,7 +1,40 @@
 import { jsPDF } from 'jspdf'
-import { statusDocumentos } from './storage'
+import { statusDocumentos, maskCPF, maskPhone, docsPara } from './storage'
 
 const statusLabel = { pendente: 'PENDENTE', aprovado: 'APROVADO', reprovado: 'REPROVADO' }
+
+/** Todas as linhas da ficha do candidato — fonte única usada no portal do RH e no PDF. */
+export function fichaLinhas(c) {
+  const f = c.ficha || {}
+  const endereco = [f.logradouro, f.numero, f.complemento].filter(Boolean).join(', ')
+  const cidadeUf = [f.cidade, f.uf].filter(Boolean).join(' / ')
+  const linhas = [
+    ['Nome completo', c.nome],
+    ['CPF', maskCPF(c.cpf)],
+    ['Data de nascimento', f.dataNascimento ? new Date(`${f.dataNascimento}T00:00:00`).toLocaleDateString('pt-BR') : ''],
+    ['Telefone (WhatsApp)', f.telefone ? maskPhone(f.telefone) : maskPhone(c.telefone)],
+    ['Endereço', [endereco, f.bairro, cidadeUf].filter(Boolean).join(' — ')],
+    ['Estado civil', f.estadoCivil],
+    ['Escolaridade', f.escolaridade],
+    ['RG', [f.rg, f.rgOrgao].filter(Boolean).join(' · ')],
+    ['CTPS', f.ctpsTipo ? `${f.ctpsTipo === 'digital' ? 'Digital' : 'Física'} nº ${f.ctpsNumero || '-'}${f.ctpsSerie ? `, série ${f.ctpsSerie}` : ''}` : ''],
+    ['Título de eleitor', f.tituloEleitor],
+    ['PIS', f.primeiroEmprego ? 'Primeiro emprego (não possui)' : f.pis],
+    ['Chave Pix', f.chavePix],
+    ['Banco', f.banco],
+  ]
+  if (c.motociclista) linhas.push(['CNH', [f.cnhNumero ? `nº ${f.cnhNumero}` : '', f.cnhCategoria ? `cat. ${f.cnhCategoria}` : ''].filter(Boolean).join(' · ')])
+  if (c.sexo === 'M') linhas.push(['Certificado de reservista', f.reservista])
+  const ct = c.contrato || {}
+  if (ct.empresa) linhas.push(['Empresa', ct.empresa])
+  if (ct.funcao) linhas.push(['Função', ct.funcao])
+  if (ct.salario) linhas.push(['Salário', ct.salario])
+  if (ct.horario) linhas.push(['Horário de trabalho', ct.horario])
+  if (ct.folga) linhas.push(['Folga', ct.folga])
+  if (ct.dataAdmissao) linhas.push(['Data de admissão', new Date(`${ct.dataAdmissao}T00:00:00`).toLocaleDateString('pt-BR')])
+  linhas.push(['Cadastrado por (recrutador)', c.recrutador])
+  return linhas.map(([k, v]) => [k, v || '—'])
+}
 
 export function gerarFichaPDF(candidato) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
@@ -22,18 +55,10 @@ export function gerarFichaPDF(candidato) {
   doc.setTextColor(30)
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
-  doc.text('Dados do Candidato', M, y)
+  doc.text('Ficha do Candidato', M, y)
   y += 7
 
-  const dados = [
-    ['Nome completo', candidato.nome],
-    ['CPF', candidato.cpf],
-    ['Telefone', candidato.telefone],
-    ['Sexo', candidato.sexo === 'M' ? 'Masculino' : 'Feminino'],
-    ['Motociclista', candidato.motociclista ? 'Sim' : 'Não'],
-    ['Cadastrado por (recrutador)', candidato.recrutador || '-'],
-    ['Data do cadastro', candidato.criadoEm ? new Date(candidato.criadoEm).toLocaleString('pt-BR') : '-'],
-  ]
+  const dados = fichaLinhas(candidato)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
   const larguraValor = W - M * 2 - 55
@@ -121,6 +146,63 @@ export function gerarFichaPDF(candidato) {
   doc.setFont('helvetica', 'bold')
   const linhasSituacao = doc.splitTextToSize(`Situação: ${situacao}`, W - M * 2)
   doc.text(linhasSituacao, M, y)
+
+  // ---------- Documentação Anexa (documentos digitalizados embutidos) ----------
+  const arquivos = candidato.arquivos || []
+  if (arquivos.length > 0) {
+    doc.addPage()
+    y = 22
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(30)
+    doc.text(`Documentação Anexa (${arquivos.length})`, M, y)
+    y += 8
+
+    const larguraUtil = W - M * 2
+    for (const arq of arquivos) {
+      // rótulo do arquivo
+      if (y > 265) { doc.addPage(); y = 22 }
+      const nomesTags = (arq.tags || []).map((id) => docsPara(candidato).find((t) => t.id === id)?.nome || id).join(', ')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9.5)
+      doc.setTextColor(30)
+      const rotulo = doc.splitTextToSize(arq.nomeArquivo, larguraUtil - 30)
+      doc.text(rotulo, M, y)
+      doc.setTextColor(...(arq.status === 'aprovado' ? [22, 130, 60] : arq.status === 'reprovado' ? [190, 40, 40] : [180, 130, 0]))
+      doc.text(statusLabel[arq.status] || arq.status, W - M, y, { align: 'right' })
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(120)
+      doc.text(doc.splitTextToSize(`Comprova: ${nomesTags || '—'} · enviado em ${new Date(arq.enviadoEm).toLocaleString('pt-BR')}`, larguraUtil), M, y + 4)
+      y += 10
+
+      // embute imagem (JPEG/PNG) direto no PDF
+      const ehImagem = arq.dataUrl && /^data:image\/(jpeg|jpg|png)/i.test(arq.dataUrl)
+      if (ehImagem) {
+        try {
+          const props = doc.getImageProperties(arq.dataUrl)
+          const alturaImg = Math.min((props.height / props.width) * larguraUtil, 160)
+          const larguraImg = (props.width / props.height) * alturaImg
+          if (y + alturaImg > 280) { doc.addPage(); y = 22 }
+          doc.addImage(arq.dataUrl, props.fileType === 'PNG' ? 'PNG' : 'JPEG', M + (larguraUtil - larguraImg) / 2, y, larguraImg, alturaImg)
+          y += alturaImg + 10
+        } catch {
+          doc.setTextColor(190, 40, 40)
+          doc.setFontSize(8.5)
+          doc.text('(imagem ilegível — baixe o arquivo pelo portal)', M, y)
+          doc.setTextColor(30)
+          y += 8
+        }
+      } else {
+        doc.setTextColor(160)
+        doc.setFontSize(8.5)
+        doc.text(arq.dataUrl ? '(documento PDF anexado — baixe pelo portal para visualizar)' : '(arquivo grande — sem cópia armazenada nesta demo; baixe pelo portal)', M, y)
+        doc.setTextColor(30)
+        y += 8
+      }
+      y += 4
+    }
+  }
 
   doc.save(`ficha-admissao-${candidato.cpf}.pdf`)
 }
