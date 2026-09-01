@@ -252,6 +252,16 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
 
   const emEdicao = uploadAberto && !!editando
 
+  // Tags disponíveis para seleção:
+  // - No envio novo: somente tags que ainda não foram cobertas por outro arquivo (ou cujo arquivo foi reprovado).
+  // - Na correção: tags já associadas a este arquivo + tags livres que ainda não foram marcadas em outros arquivos.
+  const tagsJaMarcadasPorOutros = new Set(
+    arquivos
+      .filter((a) => (!editando || a.id !== editando.id) && a.status !== 'reprovado')
+      .flatMap((a) => a.tags || [])
+  )
+  const tagsParaExibir = exigidos.filter((t) => !tagsJaMarcadasPorOutros.has(t.id) || tagsSelecionadas.includes(t.id))
+
   // bloco compartilhado de seleção de tags (usado no envio novo e na correção)
   function renderSelecaoTags(onConfirm, labelBotao) {
     return (
@@ -260,19 +270,23 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
           💡 Um único documento pode comprovar várias informações — ex.: o RG já traz o CPF. Marque todas que se aplicarem.
         </p>
         <div className="flex flex-wrap gap-2 mb-4">
-          {exigidos.map((t) => {
-            const sel = tagsSelecionadas.includes(t.id)
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => toggleTag(t.id)}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium border transition ${sel ? 'bg-brand-600 text-white border-brand-600 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:border-brand-400 hover:text-brand-700'}`}
-              >
-                {sel ? '✓ ' : '+ '}{t.nome}
-              </button>
-            )
-          })}
+          {tagsParaExibir.length === 0 ? (
+            <p className="text-xs text-slate-500 italic">Todas as informações já foram comprovadas por documentos anteriores.</p>
+          ) : (
+            tagsParaExibir.map((t) => {
+              const sel = tagsSelecionadas.includes(t.id)
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => toggleTag(t.id)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium border transition ${sel ? 'bg-brand-600 text-white border-brand-600 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:border-brand-400 hover:text-brand-700'}`}
+                >
+                  {sel ? '✓ ' : '+ '}{t.nome}
+                </button>
+              )
+            })
+          )}
         </div>
         {tagsSelecionadas.length > 0 && (
           <p className="alert-success mb-4">
