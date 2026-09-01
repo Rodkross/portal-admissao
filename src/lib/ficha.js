@@ -22,6 +22,8 @@ export function fichaLinhas(c) {
           .join('\n')
 
   const linhas = [
+    ['Empresa de cadastro', c.contrato?.empresa || 'A definir pelo RH'],
+    ['Recrutador responsável', c.recrutador],
     ['Nome completo', c.nome],
     ['CPF', maskCPF(c.cpf)],
     ['Data de nascimento', f.dataNascimento ? new Date(`${f.dataNascimento}T00:00:00`).toLocaleDateString('pt-BR') : ''],
@@ -40,13 +42,11 @@ export function fichaLinhas(c) {
   if (c.motociclista) linhas.push(['CNH', [f.cnhNumero ? `nº ${f.cnhNumero}` : '', f.cnhCategoria ? `cat. ${f.cnhCategoria}` : ''].filter(Boolean).join(' · ')])
   if (c.sexo === 'M') linhas.push(['Certificado de reservista', f.reservista])
   const ct = c.contrato || {}
-  if (ct.empresa) linhas.push(['Empresa', ct.empresa])
   if (ct.funcao) linhas.push(['Função', ct.funcao])
   if (ct.salario) linhas.push(['Salário', ct.salario])
   if (ct.horario) linhas.push(['Horário de trabalho', ct.horario])
   if (ct.folga) linhas.push(['Folga', ct.folga])
   if (ct.dataAdmissao) linhas.push(['Data de admissão', new Date(`${ct.dataAdmissao}T00:00:00`).toLocaleDateString('pt-BR')])
-  linhas.push(['Cadastrado por (recrutador)', c.recrutador])
   return linhas.map(([k, v]) => [k, v || '—'])
 }
 

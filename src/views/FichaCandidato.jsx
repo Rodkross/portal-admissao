@@ -170,6 +170,19 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
 
   return (
     <form onSubmit={salvar} className="card text-left space-y-4">
+      {/* Destaque: empresa de cadastro + recrutador responsável */}
+      <div className="rounded-xl border border-brand-200 bg-gradient-to-r from-brand-50 to-white p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-500">Empresa de cadastro</p>
+          <p className="text-lg font-bold text-brand-700 truncate">
+            {candidato.contrato?.empresa || 'A definir pelo RH'}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Recrutador responsável</p>
+          <p className="text-sm font-semibold text-slate-800">👤 {candidato.recrutador || '—'}</p>
+        </div>
+      </div>
       <div>
         <h3 className="section-title">Dados pessoais</h3>
         <p className="section-sub">Complete sua ficha de admissão. Campos com <strong>*</strong> exigem também a digitalização do documento (aba de documentos).</p>

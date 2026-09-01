@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { DOC_TIPOS, docsPara, maskCPF, maskPhone, isValidCPF, newId, onlyDigits, waLink } from '../lib/storage'
 
-export default function RecrutadorView({ db, setCandidatos }) {
+export default function RecrutadorView({ db, setCandidatos, usuario }) {
   const [nome, setNome] = useState('')
   const [cpf, setCpf] = useState('')
   const [telefone, setTelefone] = useState('')
@@ -23,7 +23,7 @@ export default function RecrutadorView({ db, setCandidatos }) {
       telefone: onlyDigits(telefone),
       sexo,
       motociclista,
-      recrutador: 'Recrutador',
+      recrutador: usuario?.nome || 'Recrutador',
       criadoEm: new Date().toISOString(),
       documentos: {},
     }
@@ -44,6 +44,10 @@ export default function RecrutadorView({ db, setCandidatos }) {
   }
 
   const aberto = db.candidatos[db.candidatos.length - 1]
+  const abertoMeu = aberto && aberto.recrutador === (usuario?.nome || '') ? aberto : null
+
+  // Cada recrutador só visualiza os candidatos que ele mesmo encaminhou.
+  const meusCandidatos = db.candidatos.filter((c) => c.recrutador === (usuario?.nome || ''))
 
   return (
     <div className="space-y-6">
@@ -81,27 +85,27 @@ export default function RecrutadorView({ db, setCandidatos }) {
         </form>
       </section>
 
-      {aberto && (
+      {abertoMeu && (
         <section className="card text-left">
           <h2 className="text-lg font-bold text-slate-800 mb-2">Candidato recém-cadastrado</h2>
-          <p className="text-sm text-slate-600 mb-3">{aberto.nome} — CPF {maskCPF(aberto.cpf)}</p>
+          <p className="text-sm text-slate-600 mb-3">{abertoMeu.nome} — CPF {maskCPF(abertoMeu.cpf)}</p>
           <div className="flex flex-wrap gap-3">
-            <a href={waLink(aberto.telefone, msgConvite(aberto))} target="_blank" rel="noreferrer" className="btn-wa">
+            <a href={waLink(abertoMeu.telefone, msgConvite(abertoMeu))} target="_blank" rel="noreferrer" className="btn-wa">
               📲 Disparar convite no WhatsApp
             </a>
-            <button onClick={() => navigator.clipboard?.writeText(linkAcesso(aberto))} className="btn-outline">Copiar link de acesso</button>
+            <button onClick={() => navigator.clipboard?.writeText(linkAcesso(abertoMeu))} className="btn-outline">Copiar link de acesso</button>
           </div>
-          <code className="block mt-3 text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 break-all text-slate-600">{linkAcesso(aberto)}</code>
+          <code className="block mt-3 text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 break-all text-slate-600">{linkAcesso(abertoMeu)}</code>
         </section>
       )}
 
       <section className="card">
-        <h2 className="section-title mb-4">Candidatos ({db.candidatos.length})</h2>
-        {db.candidatos.length === 0 ? (
-          <p className="text-sm text-slate-500">Nenhum candidato cadastrado ainda.</p>
+        <h2 className="section-title mb-4">Candidatos ({meusCandidatos.length})</h2>
+        {meusCandidatos.length === 0 ? (
+          <p className="text-sm text-slate-500">Nenhum candidato cadastrado por você ainda.</p>
         ) : (
           <div className="space-y-3">
-            {db.candidatos.slice().reverse().map((c) => {
+            {meusCandidatos.slice().reverse().map((c) => {
               const exigidos = docsPara(c)
               const env = c.documentos || {}
               const aprovs = exigidos.filter((t) => env[t.id]?.status === 'aprovado').length

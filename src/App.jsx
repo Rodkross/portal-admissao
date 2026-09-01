@@ -14,8 +14,25 @@ const ABAS_INTERNAS = [
   { id: 'usuarios', label: 'Usuários', emoji: '👥', perfis: ['rh'] },
 ]
 
+// Migração: candidatos antigos foram gravados com recrutador fixo 'Recrutador'.
+// Ao abrir o portal, o recrutador logado assume a autoria desses cadastros.
+function carregarDbMigrado() {
+  const db = loadDB()
+  const usuario = sessaoSalva()
+  if (!usuario || usuario.perfil !== 'recrutador') return db
+  if (!db.candidatos?.some((c) => !c.recrutador || c.recrutador === 'Recrutador')) return db
+  const migrado = {
+    ...db,
+    candidatos: db.candidatos.map((c) =>
+      !c.recrutador || c.recrutador === 'Recrutador' ? { ...c, recrutador: usuario.nome } : c,
+    ),
+  }
+  saveDB(migrado)
+  return migrado
+}
+
 function App() {
-  const [db, setDb] = useState(loadDB)
+  const [db, setDb] = useState(carregarDbMigrado)
   const [usuario, setUsuario] = useState(sessaoSalva)
   const [perfil, setPerfil] = useState('recrutador')
   const [mHash] = useState(() => location.hash.match(/^#\/acesso\/(\d+)/))
