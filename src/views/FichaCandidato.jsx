@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { onlyDigits, maskCEP, maskCPF, maskPhone, statusDocumentos } from '../lib/storage'
+import { onlyDigits, maskCEP, maskCPF, maskPhone, statusDocumentos, calcularIdade, newId } from '../lib/storage'
 
 const ESCOLARIDADES = [
   'Fundamental incompleto', 'Fundamental completo', 'Médio incompleto', 'Médio completo',
@@ -13,12 +13,26 @@ const FICHA_VAZIA = {
   telefone: '', estadoCivil: '', ctpsTipo: '', ctpsNumero: '', ctpsSerie: '', rg: '', rgOrgao: '',
   tituloEleitor: '', pis: '', primeiroEmprego: false, chavePix: '', banco: '',
   cnhNumero: '', cnhCategoria: '', escolaridade: '',
+  temFilhos: false,
+  numFilhos: 0,
+  dependentes: [],
 }
 
 
 
 export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo }) {
-  const [form, setForm] = useState(() => ({ ...FICHA_VAZIA, nome: candidato.nome || '', ...(candidato.ficha || {}) }))
+  const [form, setForm] = useState(() => {
+    const f = candidato.ficha || {}
+    const deps = Array.isArray(f.dependentes) ? f.dependentes : []
+    return {
+      ...FICHA_VAZIA,
+      nome: candidato.nome || '',
+      ...f,
+      temFilhos: f.temFilhos ?? (deps.length > 0),
+      numFilhos: f.numFilhos ?? (deps.length || 0),
+      dependentes: deps,
+    }
+  })
   const [buscandoCep, setBuscandoCep] = useState(false)
   const [erroCep, setErroCep] = useState('')
   const [salvo, setSalvo] = useState(false)
@@ -34,6 +48,60 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
   function set(campo, valor) {
     setSalvo(false)
     setForm((f) => ({ ...f, [campo]: valor }))
+  }
+
+  function handleTemFilhosChange(tem) {
+    setSalvo(false)
+    if (!tem) {
+      setForm((f) => ({ ...f, temFilhos: false, numFilhos: 0, dependentes: [] }))
+    } else {
+      setForm((f) => {
+        const deps = f.dependentes && f.dependentes.length > 0 ? f.dependentes : [{ id: newId('dep'), nome: '', dataNascimento: '' }]
+        return { ...f, temFilhos: true, numFilhos: deps.length, dependentes: deps }
+      })
+    }
+  }
+
+  function handleNumFilhosChange(qtd) {
+    setSalvo(false)
+    const n = Math.max(1, Math.min(20, parseInt(qtd, 10) || 1))
+    setForm((f) => {
+      const atuais = [...(f.dependentes || [])]
+      while (atuais.length < n) {
+        atuais.push({ id: newId('dep'), nome: '', dataNascimento: '' })
+      }
+      return { ...f, numFilhos: n, dependentes: atuais.slice(0, n) }
+    })
+  }
+
+  function adicionarFilho() {
+    setSalvo(false)
+    setForm((f) => {
+      const novos = [...(f.dependentes || []), { id: newId('dep'), nome: '', dataNascimento: '' }]
+      return { ...f, temFilhos: true, numFilhos: novos.length, dependentes: novos }
+    })
+  }
+
+  function removerFilho(index) {
+    setSalvo(false)
+    setForm((f) => {
+      const novos = (f.dependentes || []).filter((_, i) => i !== index)
+      return {
+        ...f,
+        temFilhos: novos.length > 0,
+        numFilhos: novos.length,
+        dependentes: novos,
+      }
+    })
+  }
+
+  function atualizarFilho(index, campo, valor) {
+    setSalvo(false)
+    setForm((f) => {
+      const novos = [...(f.dependentes || [])]
+      novos[index] = { ...novos[index], [campo]: valor }
+      return { ...f, dependentes: novos }
+    })
   }
 
   async function buscarCep() {
@@ -65,9 +133,23 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
     if (!f.rg.trim()) return setErro('Informe o RG.')
     if (!f.tituloEleitor.trim()) return setErro('Informe o título de eleitor.')
     if (!f.ctpsTipo) return setErro('Selecione o tipo de CTPS (física ou digital).')
-    if (!f.ctpsNumero.trim()) return setErro('Informe o número da CTPS.')
+    if (f.ctpsTipo !== 'digital' && !f.ctpsNumero.trim()) return setErro('Informe o número da CTPS.')
     if (!f.primeiroEmprego && !f.pis.trim()) return setErro('Informe o PIS ou marque "primeiro emprego".')
     if (!f.escolaridade) return setErro('Selecione a escolaridade.')
+    if (f.temFilhos) {
+      if (!f.dependentes || f.dependentes.length === 0) {
+        return setErro('Informe os dados dos filhos/dependentes.')
+      }
+      for (let i = 0; i < f.dependentes.length; i++) {
+        const dep = f.dependentes[i]
+        if (!dep.nome?.trim()) {
+          return setErro(`Informe o nome completo do filho(a) ${i + 1}.`)
+        }
+        if (!dep.dataNascimento) {
+          return setErro(`Informe a data de nascimento do filho(a) ${i + 1} (${dep.nome.trim()}).`)
+        }
+      }
+    }
     if (motociclista && !f.cnhNumero.trim()) return setErro('Informe o número da CNH (motociclista).')
     if (motociclista && !f.cnhCategoria) return setErro('Informe a categoria da CNH.')
     setErro('')
@@ -75,7 +157,12 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
       ...c,
       nome: f.nome.trim(),
       telefone: onlyDigits(f.telefone),
-      ficha: { ...f, nome: f.nome.trim(), atualizadoEm: new Date().toISOString() },
+      ficha: {
+        ...f,
+        nome: f.nome.trim(),
+        dependentes: f.temFilhos ? f.dependentes.map((d) => ({ ...d, nome: d.nome.trim() })) : [],
+        atualizadoEm: new Date().toISOString(),
+      },
     }))
     setSalvo(true)
     onSalvo?.()
@@ -154,6 +241,125 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
         </label>
       </div>
 
+      {/* Seção de Dependentes / Filhos */}
+      <div className="border-t border-slate-100 pt-4 space-y-3">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-800">Dependentes e Filhos</h4>
+          <p className="text-xs text-slate-500">Informe se possui filhos para apuração do salário-família e documentação exigida.</p>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-4 text-sm">
+          <label>
+            <span className="text-slate-600">Possui filhos / dependentes? *</span>
+            <select
+              value={form.temFilhos ? 'sim' : 'nao'}
+              onChange={(e) => handleTemFilhosChange(e.target.value === 'sim')}
+              className="input"
+            >
+              <option value="nao">Não</option>
+              <option value="sim">Sim</option>
+            </select>
+          </label>
+
+          {form.temFilhos && (
+            <label>
+              <span className="text-slate-600">Quantidade de filhos *</span>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={form.numFilhos || (form.dependentes?.length || 1)}
+                onChange={(e) => handleNumFilhosChange(e.target.value)}
+                className="input"
+              />
+            </label>
+          )}
+        </div>
+
+        {form.temFilhos && form.dependentes?.length > 0 && (
+          <div className="space-y-3 pt-2">
+            {form.dependentes.map((dep, idx) => {
+              const idade = calcularIdade(dep.dataNascimento)
+              return (
+                <div key={dep.id || idx} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-xs text-slate-700">
+                      Filho(a) {idx + 1} {dep.nome ? `— ${dep.nome}` : ''}
+                    </span>
+                    {form.dependentes.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removerFilho(idx)}
+                        className="text-xs text-rose-600 hover:text-rose-700 font-medium cursor-pointer"
+                      >
+                        ✕ Remover
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 gap-3 text-sm">
+                    <label>
+                      <span className="text-slate-600">Nome completo do filho(a) *</span>
+                      <input
+                        value={dep.nome || ''}
+                        onChange={(e) => atualizarFilho(idx, 'nome', e.target.value)}
+                        className="input bg-white"
+                        placeholder="Nome conforme documento"
+                      />
+                    </label>
+                    <label>
+                      <span className="text-slate-600">Data de nascimento *</span>
+                      <input
+                        type="date"
+                        value={dep.dataNascimento || ''}
+                        onChange={(e) => atualizarFilho(idx, 'dataNascimento', e.target.value)}
+                        className="input bg-white"
+                      />
+                    </label>
+                  </div>
+
+                  {dep.dataNascimento && idade !== null && (
+                    <div className="text-xs p-2.5 rounded-lg border bg-white flex items-start gap-2 text-slate-700">
+                      <span className="text-base leading-none">{idade <= 6 ? '👶' : idade < 14 ? '🧒' : '🧑'}</span>
+                      <div>
+                        <p className="font-semibold text-slate-800">
+                          Idade: {idade} {idade === 1 ? 'ano' : 'anos'}
+                        </p>
+                        <p className="text-slate-600 mt-0.5">
+                          {idade <= 6 ? (
+                            <>
+                              <strong>Documentos exigidos na etapa seguinte:</strong> Certidão de Nascimento ou RG, CPF e Carteira de Vacinação (folha do nome e das vacinas).
+                            </>
+                          ) : idade < 14 ? (
+                            <>
+                              <strong>Documentos exigidos na etapa seguinte:</strong> Certidão ou RG, CPF e Declaração de Escolaridade (frequência escolar).
+                            </>
+                          ) : (
+                            <>
+                              <strong>Acima de 14 anos:</strong> Não é obrigatório o envio de comprovantes de dependente para admissão.
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={adicionarFilho}
+                className="btn-outline btn-sm"
+              >
+                + Adicionar outro filho
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       <DocumentosSection form={form} set={set} motociclista={motociclista} homem={homem} statusDe={statusDe} />
 
       <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100">
@@ -211,14 +417,18 @@ function DocumentosSection({ form, set, motociclista, homem, statusDe }) {
           <option value="fisica">Física</option>
         </select>
       </label>
-      <label>
-        <span className="text-slate-600">Número da CTPS *</span>
-        <input value={form.ctpsNumero} onChange={(e) => set('ctpsNumero', e.target.value)} className="input" />
-      </label>
-      <label>
-        <span className="text-slate-600">Série da CTPS</span>
-        <input value={form.ctpsSerie} onChange={(e) => set('ctpsSerie', e.target.value)} className="input" placeholder="Ex.: 0001" />
-      </label>
+      {form.ctpsTipo !== 'digital' && (
+        <>
+          <label>
+            <span className="text-slate-600">Número da CTPS *</span>
+            <input value={form.ctpsNumero} onChange={(e) => set('ctpsNumero', e.target.value)} className="input" />
+          </label>
+          <label>
+            <span className="text-slate-600">Série da CTPS</span>
+            <input value={form.ctpsSerie} onChange={(e) => set('ctpsSerie', e.target.value)} className="input" placeholder="Ex.: 0001" />
+          </label>
+        </>
+      )}
       <label className="sm:col-span-2 flex items-start gap-2 cursor-pointer">
         <input type="checkbox" className="mt-0.5 size-4" checked={form.primeiroEmprego} onChange={(e) => set('primeiroEmprego', e.target.checked)} />
         <span className="text-slate-600">Este é o meu <strong>primeiro emprego</strong> (não possuo PIS — campo e digitalização dispensados)</span>

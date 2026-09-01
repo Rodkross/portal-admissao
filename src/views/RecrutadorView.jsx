@@ -40,7 +40,7 @@ export default function RecrutadorView({ db, setCandidatos }) {
     const reprovs = Object.entries(c.documentos || {}).filter(([, v]) => v.status === 'reprovado')
     const base = `Olá ${c.nome.split(' ')[0]}! Sobre sua documentação de admissão:`
     if (reprovs.length === 0) return base + '\nTodos os documentos foram enviados e estão aguardando validação. Acompanhe no portal: ' + linkAcesso(c)
-    return base + '\n' + reprovs.map(([id, v]) => `• ${DOC_TIPOS.find((t) => t.id === id)?.nome}: ${v.observacao || 'documento reprovado'}`).join('\n') + `\n\nCorrija e reenvie pelo portal: ${linkAcesso(c)}`
+    return base + '\n' + reprovs.map(([id, v]) => `• ${docsPara(c).find((t) => t.id === id)?.nome || DOC_TIPOS.find((t) => t.id === id)?.nome || id}: ${v.observacao || 'documento reprovado'}`).join('\n') + `\n\nCorrija e reenvie pelo portal: ${linkAcesso(c)}`
   }
 
   const aberto = db.candidatos[db.candidatos.length - 1]

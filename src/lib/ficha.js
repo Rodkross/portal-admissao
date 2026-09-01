@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import { statusDocumentos, maskCPF, maskPhone, docsPara } from './storage'
+import { statusDocumentos, maskCPF, maskPhone, docsPara, calcularIdade } from './storage'
 
 const statusLabel = { pendente: 'PENDENTE', aprovado: 'APROVADO', reprovado: 'REPROVADO' }
 
@@ -8,6 +8,19 @@ export function fichaLinhas(c) {
   const f = c.ficha || {}
   const endereco = [f.logradouro, f.numero, f.complemento].filter(Boolean).join(', ')
   const cidadeUf = [f.cidade, f.uf].filter(Boolean).join(' / ')
+  const depList = f.temFilhos && Array.isArray(f.dependentes) ? f.dependentes : []
+  const filhosTexto =
+    depList.length === 0
+      ? 'Não possui'
+      : depList
+          .map((d, i) => {
+            const idade = calcularIdade(d.dataNascimento)
+            const idadeStr = idade !== null ? ` (${idade} ${idade === 1 ? 'ano' : 'anos'})` : ''
+            const dataStr = d.dataNascimento ? new Date(`${d.dataNascimento}T00:00:00`).toLocaleDateString('pt-BR') : ''
+            return `${i + 1}. ${d.nome || 'Sem nome'} — Nasc: ${dataStr || '—'}${idadeStr}`
+          })
+          .join('\n')
+
   const linhas = [
     ['Nome completo', c.nome],
     ['CPF', maskCPF(c.cpf)],
@@ -16,8 +29,9 @@ export function fichaLinhas(c) {
     ['Endereço', [endereco, f.bairro, cidadeUf].filter(Boolean).join(' — ')],
     ['Estado civil', f.estadoCivil],
     ['Escolaridade', f.escolaridade],
+    ['Dependentes / Filhos', filhosTexto],
     ['RG', [f.rg, f.rgOrgao].filter(Boolean).join(' · ')],
-    ['CTPS', f.ctpsTipo ? `${f.ctpsTipo === 'digital' ? 'Digital' : 'Física'} nº ${f.ctpsNumero || '-'}${f.ctpsSerie ? `, série ${f.ctpsSerie}` : ''}` : ''],
+    ['CTPS', f.ctpsTipo === 'digital' ? 'Digital' : (f.ctpsTipo ? `Física nº ${f.ctpsNumero || '-'}${f.ctpsSerie ? `, série ${f.ctpsSerie}` : ''}` : '')],
     ['Título de eleitor', f.tituloEleitor],
     ['PIS', f.primeiroEmprego ? 'Primeiro emprego (não possui)' : f.pis],
     ['Chave Pix', f.chavePix],
@@ -63,6 +77,7 @@ export function gerarFichaPDF(candidato) {
   doc.setFontSize(10)
   const larguraValor = W - M * 2 - 55
   for (const [label, value] of dados) {
+    if (y > 255) { doc.addPage(); y = 22 }
     const linhasValor = doc.splitTextToSize(String(value || '-'), larguraValor)
     const alturaBloco = Math.max(linhasValor.length * 5, 6.5)
     doc.setTextColor(110)
