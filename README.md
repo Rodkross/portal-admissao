@@ -17,6 +17,11 @@ Aplicação web para documentação de novos colaboradores: recrutadores cadastr
 - Preenchimento da ficha de admissão (dados pessoais, endereço, CTPS, PIS, Pix, banco, dados do contrato etc.).
 - Upload de documentos com **tags**: um mesmo arquivo pode comprovar vários requisitos (ex.: RG que já traz o CPF).
 - Lista de documentos exigidos calculada dinamicamente (PIS não é exigido no primeiro emprego; reservista apenas para homens; CNH e CRLV apenas para motociclistas).
+- **Documentos de dependentes (filhos)**: ao informar filhos na ficha, são exigidos documentos adicionais conforme a idade de cada um:
+  - **Até 6 anos** — Certidão de Nascimento ou RG, CPF do filho e Carteira de Vacinação (nome e vacinas);
+  - **De 7 a 13 anos (menores de 14)** — Certidão ou RG, CPF do filho e Declaração de Escolaridade;
+  - **Idade não informada** — Certidão ou RG e CPF do filho.
+- Cálculo automático da idade do dependente a partir da data de nascimento (função `calcularIdade`).
 - Acompanhamento do status de cada documento: `pendente`, `aprovado`, `reprovado`.
 
 ### Geração de PDF
@@ -94,7 +99,7 @@ npm run preview
 
 ## Modelo de dados (resumo)
 
-- `candidato`: `{ id, nome, cpf, telefone, sexo, motociclista, recrutador, ficha: {...}, contrato: {...}, arquivos: [...] }`
+- `candidato`: `{ id, nome, cpf, telefone, sexo, motociclista, recrutador, ficha: {..., temFilhos, dependentes: [{ id, nome, dataNascimento }] }, contrato: {...}, arquivos: [...] }`
 - `arquivo`: `{ id, nomeArquivo, tipo, tamanho, dataUrl, tags: [docId], status, observacao, enviadoEm }`
 - `usuário`: `{ id, nome, email, senha, perfil: 'rh'|'recrutador', criadoEm }`
 
@@ -114,6 +119,9 @@ Chaves de armazenamento no navegador:
 | PIS | Não é exigido se "primeiro emprego" |
 | Certificado de Reservista | Apenas sexo masculino |
 | CNH Categoria A e CRLV da motocicleta | Apenas motociclistas |
+| Certidão de Nascimento/RG, CPF e Carteira de Vacinação do dependente | Filhos com até 6 anos |
+| Certidão/RG, CPF e Declaração de Escolaridade do dependente | Filhos de 7 a 13 anos |
+| Certidão/RG e CPF do dependente | Filho sem data de nascimento informada |
 
 ## Roadmap / melhorias para produção
 
