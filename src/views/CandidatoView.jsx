@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { docsPara, maskCPF, onlyDigits, statusDocumentos, documentosFaltantes, newId } from '../lib/storage'
+import { docsPara, maskCPF, onlyDigits, statusDocumentos, documentosFaltantes, isDocDependente, newId } from '../lib/storage'
 import FichaCandidato from './FichaCandidato'
 
 const MAX_MB = 5
@@ -10,23 +10,23 @@ const ETAPAS = [
   { n: 3, titulo: 'Revisão e envio', desc: 'Confirme para o RH' },
 ]
 
-function Stepper({ etapa, maxEtapa, irPara }) {
+function Stepper({ etapa, maxEtapa, irPara, docsObrigatoriosCompletos }) {
   return (
     <div className="card text-left">
       <div className="flex items-center">
         {ETAPAS.map((e, i) => {
           const concluida = e.n < etapa
           const atual = e.n === etapa
-          const acessivel = e.n <= maxEtapa
-          return (
-            <div key={e.n} className={`flex items-center ${i < ETAPAS.length - 1 ? 'flex-1' : ''}`}>
-              <button
-                type="button"
-                disabled={!acessivel || atual}
-                onClick={() => acessivel && irPara(e.n)}
-                className={`flex items-center gap-2 shrink-0 ${acessivel && !atual ? 'cursor-pointer group' : 'cursor-default'}`}
-                title={acessivel ? (atual ? 'Etapa atual' : 'Voltar para esta etapa') : 'Conclua a etapa anterior primeiro'}
-              >
+          const acessivel = e.n === 3 ? (maxEtapa >= 3 && docsObrigatoriosCompletos) : e.n <= maxEtapa
+            return (
+              <div key={e.n} className={`flex items-center ${i < ETAPAS.length - 1 ? 'flex-1' : ''}`}>
+                <button
+                  type="button"
+                  disabled={!acessivel || atual}
+                  onClick={() => acessivel && irPara(e.n)}
+                  className={`flex items-center gap-2 shrink-0 ${acessivel && !atual ? 'cursor-pointer group' : 'cursor-default'}`}
+                  title={acessivel ? (atual ? 'Etapa atual' : 'Voltar para esta etapa') : 'Conclua a etapa anterior primeiro'}
+                >
                 <span
                   className={`size-9 shrink-0 rounded-full flex items-center justify-center text-sm font-bold transition ${
                     atual
@@ -75,16 +75,10 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
   const [envioAberto, setEnvioAberto] = useState(false)
   const [aceiteLgpd, setAceiteLgpd] = useState(false)
   const [aceiteVeracidade, setAceiteVeracidade] = useState(false)
+  const [aceiteSalarioFamilia, setAceiteSalarioFamilia] = useState(false)
   // wizard: etapa atual e maior etapa liberada (persistidas no candidato)
   const [etapa, setEtapa] = useState(() => candidato?.etapa || 1)
   const [maxEtapa, setMaxEtapa] = useState(() => candidato?.etapa || 1)
-
-  function irPara(n) {
-    setEtapa(n)
-    setMaxEtapa((m) => Math.max(m, n))
-    atualizarCandidato(candidato.id, (c) => ({ ...c, etapa: n }))
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
 
   if (!candidato) {
     return (
@@ -119,6 +113,20 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
   const faltantes = documentosFaltantes(candidato)
   const exigidos = docsPara(candidato)
   const arquivos = candidato.arquivos || []
+
+  const faltantesTitular = faltantes.filter((d) => !isDocDependente(d.docId))
+  const faltantesDependentes = faltantes.filter((d) => isDocDependente(d.docId))
+  const docsObrigatoriosCompletos = faltantesTitular.length === 0
+  const temFilhosDeclarados = !!candidato.ficha?.temFilhos && (candidato.ficha?.dependentes?.length || 0) > 0
+  const temDepPendentes = temFilhosDeclarados && faltantesDependentes.length > 0
+
+  function irPara(n) {
+    if (n === 3 && (!docsObrigatoriosCompletos || arquivos.length === 0)) return
+    setEtapa(n)
+    setMaxEtapa((m) => Math.max(m, n))
+    atualizarCandidato(candidato.id, (c) => ({ ...c, etapa: n }))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   const aprovados = statusDocs.filter((d) => d.status === 'aprovado').length
   const reprovados = statusDocs.filter((d) => d.status === 'reprovado').length
@@ -329,7 +337,7 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
         </div>
       </section>
 
-      <Stepper etapa={etapa} maxEtapa={maxEtapa} irPara={irPara} />
+      <Stepper etapa={etapa} maxEtapa={maxEtapa} irPara={irPara} docsObrigatoriosCompletos={docsObrigatoriosCompletos} />
 
       {erroLocal && etapa === 2 && <p className="alert-error">{erroLocal}</p>}
 
@@ -483,16 +491,27 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
       )}
 
       {/* navegação da etapa 2 */}
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center gap-3">
             <button onClick={() => irPara(1)} className="btn-outline">← Voltar</button>
-            <button
-              onClick={() => irPara(3)}
-              className="btn-primary"
-              disabled={arquivos.length === 0}
-              title={arquivos.length === 0 ? 'Envie pelo menos um documento para continuar' : ''}
-            >
-              Revisar e enviar →
-            </button>
+            <div className="text-right">
+              <button
+                onClick={() => irPara(3)}
+                className="btn-primary"
+                disabled={!docsObrigatoriosCompletos || arquivos.length === 0}
+                title={
+                  !docsObrigatoriosCompletos
+                    ? `Anexe todos os documentos obrigatórios para continuar (falta: ${faltantesTitular.map((f) => f.nome).join(', ')})`
+                    : ''
+                }
+              >
+                Revisar e enviar →
+              </button>
+              {!docsObrigatoriosCompletos && (
+                <p className="text-[11px] text-amber-700 mt-1">
+                  Falta anexar: {faltantesTitular.map((f) => f.nome).join(', ')}
+                </p>
+              )}
+            </div>
           </div>
         </>
       )}
@@ -503,18 +522,36 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
       {/* Rodapé */}
       <section className="card">
         {faltantes.length === 0 ? (
-          <p className="alert-success">✅ Documentação completa! O RH irá validar em breve.</p>
+          <p className="alert-success">✅ Toda a documentação está completa e pronta para envio ao RH!</p>
+        ) : docsObrigatoriosCompletos && temDepPendentes ? (
+          <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-left space-y-1.5 text-xs text-amber-900">
+            <p className="font-bold text-amber-950 text-sm">Documentação principal completa!</p>
+            <p>
+              Você já pode enviar sua admissão. Documentos de dependentes pendentes ({faltantesDependentes.map((f) => f.nome).join(', ')}) não impedem o seu registro de admissão.
+            </p>
+            <p className="font-medium text-amber-950">
+              ⚠️ Ao enviar sem anexar os documentos dos filhos, você será registrado sem o benefício do Salário-Família dos respectivos dependentes até a entrega dos documentos.
+            </p>
+          </div>
         ) : (
-          <p className="text-sm text-slate-600">
-            Ainda falta(m) <strong>{faltantes.length}</strong> informação(ões): {faltantes.map((f) => f.nome).join(', ')}.
-            <br />
-            Dica: um documento que já contenha essa informação pode cobrir mais de um item de uma vez.
+          <p className="text-sm text-slate-600 text-left">
+            Ainda falta(m) <strong>{faltantes.length}</strong> documento(s) obrigatório(s): {faltantes.map((f) => f.nome).join(', ')}.
           </p>
         )}
         <button
-          onClick={() => { setAceiteLgpd(false); setAceiteVeracidade(false); setEnvioAberto(true) }}
+          onClick={() => {
+            setAceiteLgpd(false)
+            setAceiteVeracidade(false)
+            setAceiteSalarioFamilia(false)
+            setEnvioAberto(true)
+          }}
           className="btn-primary mt-3"
-          disabled={arquivos.length === 0 || !candidato.ficha?.atualizadoEm}
+          disabled={!docsObrigatoriosCompletos || arquivos.length === 0 || !candidato.ficha?.atualizadoEm}
+          title={
+            !docsObrigatoriosCompletos
+              ? `Anexe todos os documentos obrigatórios antes de enviar (falta: ${faltantesTitular.map((f) => f.nome).join(', ')})`
+              : ''
+          }
         >
           📤 Enviar documentação ao RH
         </button>
@@ -533,15 +570,44 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
         </>
       )}
 
-      {/* Modal de envio ao RH — consentimento LGPD */}
+      {/* Modal de envio ao RH — consentimento LGPD e ciência sobre dependentes */}
       {envioAberto && (
         <div className="fixed inset-0 z-30 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEnvioAberto(false)}>
-          <div className="card max-w-md w-full max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="card max-w-md w-full max-h-[85vh] overflow-y-auto text-left" onClick={(e) => e.stopPropagation()}>
             <h3 className="section-title mb-2">Enviar documentação ao RH</h3>
             <p className="text-sm text-slate-600 mb-4">
-              Ao enviar, os documentos anexados e seus dados cadastrais serão encaminhados ao setor de Recursos Humanos para análise.
+              Ao enviar, os documentos anexados e seus dados cadastrais serão encaminhados ao setor de Recursos Humanos para análise e admissão.
             </p>
-            <div className="text-sm text-slate-700 bg-brand-50 border border-brand-100 rounded-lg p-3 mb-4">
+
+            {temDepPendentes && (
+              <div className="text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded-xl p-3.5 mb-4 space-y-2">
+                <div className="flex items-start gap-2">
+                  <span className="text-base leading-none">⚠️</span>
+                  <div>
+                    <p className="font-bold text-amber-950">Atenção: Documentos de dependentes pendentes</p>
+                    <p className="mt-1 leading-relaxed">
+                      Você declarou dependente(s), mas <strong>não anexou toda a documentação comprobatória</strong> dos filhos ({faltantesDependentes.map((f) => f.nome).join(', ')}).
+                    </p>
+                    <p className="mt-1.5 leading-relaxed font-medium text-amber-950">
+                      Os documentos de dependentes <strong>não impedem seu registro</strong> de admissão. No entanto, ao enviar sem esses documentos, você será registrado(a) <strong>sem o benefício do Salário-Família</strong> referente aos filhos sem comprovação até que a documentação seja entregue.
+                    </p>
+                  </div>
+                </div>
+                <label className="flex items-start gap-2 pt-2 border-t border-amber-200/80 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4 accent-amber-600"
+                    checked={aceiteSalarioFamilia}
+                    onChange={(e) => setAceiteSalarioFamilia(e.target.checked)}
+                  />
+                  <span className="font-semibold text-amber-950 text-[11px] leading-tight">
+                    Estou ciente de que serei registrado(a) sem o Salário-Família dos dependentes que estão sem documentação.
+                  </span>
+                </label>
+              </div>
+            )}
+
+            <div className="text-xs text-slate-700 bg-brand-50 border border-brand-100 rounded-lg p-3 mb-4">
               <p className="font-semibold text-brand-700 mb-1">Aviso de privacidade (LGPD — Lei nº 13.709/2018)</p>
               <p>
                 Seus dados pessoais e documentos serão utilizados exclusivamente para fins de registro do vínculo
@@ -566,11 +632,16 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
               <button onClick={() => setEnvioAberto(false)} className="btn-outline">Cancelar</button>
               <button
                 className="btn-primary"
-                disabled={!aceiteLgpd || !aceiteVeracidade}
+                disabled={!aceiteLgpd || !aceiteVeracidade || (temDepPendentes && !aceiteSalarioFamilia)}
                 onClick={() => {
                   atualizarCandidato(candidato.id, (c) => ({
                     ...c,
-                    envioRH: { em: new Date().toISOString(), aceiteLgpd: true, aceiteVeracidade: true },
+                    envioRH: {
+                      em: new Date().toISOString(),
+                      aceiteLgpd: true,
+                      aceiteVeracidade: true,
+                      aceiteSalarioFamilia: temDepPendentes ? true : undefined,
+                    },
                   }))
                   setEnvioAberto(false)
                 }}

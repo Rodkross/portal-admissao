@@ -135,6 +135,10 @@ export function newId(prefix) {
   return `${prefix}-${Date.now().toString(36)}${seq}`
 }
 
+export function isDocDependente(docId) {
+  return typeof docId === 'string' && docId.startsWith('dep_')
+}
+
 /** Resolve a situação de cada documento exigido a partir dos arquivos enviados (com tags). */
 export function statusDocumentos(candidato) {
   const exigidos = docsPara(candidato)
