@@ -59,6 +59,19 @@ export function waLink(phone, text) {
   return `https://wa.me/${withCC}?text=${encodeURIComponent(text)}`
 }
 
+export function calcularIdade(dataNasc) {
+  if (!dataNasc) return null
+  const hoje = new Date()
+  const nasc = new Date(`${dataNasc}T00:00:00`)
+  if (isNaN(nasc.getTime())) return null
+  let idade = hoje.getFullYear() - nasc.getFullYear()
+  const m = hoje.getMonth() - nasc.getMonth()
+  if (m < 0 || (m === 0 && hoje.getDate() < nasc.getDate())) {
+    idade--
+  }
+  return Math.max(0, idade)
+}
+
 // Lista de documentos exigidos. Condição define se é obrigatório para o candidato.
 export const DOC_TIPOS = [
   { id: 'rg', nome: 'RG', obrigatorio: () => true },
@@ -72,7 +85,42 @@ export const DOC_TIPOS = [
 ]
 
 export function docsPara(candidato) {
-  return DOC_TIPOS.filter((t) => t.obrigatorio(candidato))
+  const base = DOC_TIPOS.filter((t) => t.obrigatorio(candidato))
+  const f = candidato?.ficha || {}
+  if (!f.temFilhos || !Array.isArray(f.dependentes) || f.dependentes.length === 0) {
+    return base
+  }
+
+  const docsDep = []
+  f.dependentes.forEach((dep, i) => {
+    const depId = dep.id || `f${i + 1}`
+    const primeiroNome = dep.nome?.trim() ? dep.nome.trim().split(' ')[0] : `Filho(a) ${i + 1}`
+    const idade = calcularIdade(dep.dataNascimento)
+    const idadeLabel = idade !== null ? ` (${idade} ${idade === 1 ? 'ano' : 'anos'})` : ''
+
+    if (idade !== null && idade <= 6) {
+      // Filhos até 6 anos: certidão de nascimento ou RG, CPF e carteira de vacinação (nome e vacinas)
+      docsDep.push(
+        { id: `dep_${depId}_certidao_rg`, nome: `Certidão de Nascimento ou RG — ${primeiroNome}${idadeLabel}`, obrigatorio: () => true },
+        { id: `dep_${depId}_cpf`, nome: `CPF — ${primeiroNome}`, obrigatorio: () => true },
+        { id: `dep_${depId}_vacinacao`, nome: `Carteira de Vacinação — ${primeiroNome} (nome e vacinas)`, obrigatorio: () => true },
+      )
+    } else if (idade !== null && idade >= 7 && idade < 14) {
+      // Filhos de 7 a 14 incompletos: certidão ou RG, CPF e doc de escolaridade
+      docsDep.push(
+        { id: `dep_${depId}_certidao_rg`, nome: `Certidão ou RG — ${primeiroNome}${idadeLabel}`, obrigatorio: () => true },
+        { id: `dep_${depId}_cpf`, nome: `CPF — ${primeiroNome}`, obrigatorio: () => true },
+        { id: `dep_${depId}_escolaridade`, nome: `Declaração de Escolaridade — ${primeiroNome}`, obrigatorio: () => true },
+      )
+    } else if (idade === null && dep.nome?.trim()) {
+      docsDep.push(
+        { id: `dep_${depId}_certidao_rg`, nome: `Certidão ou RG — ${primeiroNome}`, obrigatorio: () => true },
+        { id: `dep_${depId}_cpf`, nome: `CPF — ${primeiroNome}`, obrigatorio: () => true },
+      )
+    }
+  })
+
+  return [...base, ...docsDep]
 }
 
 export const STATUS_DOC = { pendente: 'pendente', aprovado: 'aprovado', reprovado: 'reprovado' }
@@ -120,5 +168,5 @@ export function documentosFaltantes(candidato) {
 export function tagsDisponiveis(candidato) {
   const status = statusDocumentos(candidato)
   const faltando = new Set(status.filter((d) => !d.arquivo || d.status === 'reprovado').map((d) => d.docId))
-  return DOC_TIPOS.filter((t) => t.obrigatorio(candidato) && faltando.has(t.id))
+  return docsPara(candidato).filter((t) => faltando.has(t.id))
 }

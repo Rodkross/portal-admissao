@@ -200,7 +200,7 @@ export default function RhView({ db, atualizarCandidato }) {
             {fichaLinhas(cand).map(([rotulo, valor]) => (
               <div key={rotulo} className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1">
                 <span className="text-xs text-slate-400 shrink-0">{rotulo}</span>
-                <span className="text-sm text-slate-800 font-medium text-right break-words min-w-0">{valor}</span>
+                <span className="text-sm text-slate-800 font-medium text-right break-words min-w-0 whitespace-pre-line">{valor}</span>
               </div>
             ))}
             <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1 sm:col-span-2">
