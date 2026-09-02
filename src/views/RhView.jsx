@@ -1,8 +1,52 @@
 import { useEffect, useState } from 'react'
+import { urlArquivoFB } from '../lib/api'
 import { maskCPF, maskPhone, waLink, statusDocumentos, documentosFaltantes, docsPara, onlyDigits, isMotociclista } from '../lib/storage'
 import { gerarFichaPDF, fichaLinhas } from '../lib/ficha'
 
 const CONTRATO_VAZIO = { empresa: '', funcao: '', horista: false, salario: '', horario: '', folga: '', dataAdmissao: '' }
+
+function PreviewAprovado({ dados, onFechar }) {
+  const { arquivo, cand } = dados
+  const [url, setUrl] = useState(arquivo.dataUrl || null)
+  useEffect(() => {
+    let vivo = true
+    if (!url && arquivo.caminho) {
+      urlArquivoFB(arquivo.caminho).then((u) => { if (vivo && u) setUrl(u) })
+    }
+    return () => { vivo = false }
+  }, [arquivo.caminho, url])
+  if (!url) return null
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4" onClick={onFechar}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full h-[90vh] flex flex-col overflow-hidden text-left border border-slate-200" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 bg-slate-50 shrink-0">
+          <div className="min-w-0 pr-4">
+            <h3 className="font-bold text-slate-900 text-base truncate flex items-center gap-2">
+              <span>📄</span> {(arquivo.tags || []).map((id) => docsPara(cand).find((t) => t.id === id)?.nome || id).join(', ') || 'Documento'}
+              <span className="badge badge-ok">✔ Aprovado</span>
+            </h3>
+            <p className="text-xs text-slate-500 truncate mt-0.5">
+              Enviado em {new Date(arquivo.enviadoEm).toLocaleString('pt-BR')}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <a href={url} download={arquivo.nomeArquivo} target="_blank" rel="noreferrer" className="btn-outline btn-sm !text-xs !py-1 !px-2.5 flex items-center gap-1">
+              <span>⬇</span> Baixar
+            </a>
+            <button type="button" onClick={onFechar} className="btn-outline btn-sm !text-xs !py-1 !px-2.5 font-bold hover:bg-slate-200">✕ Fechar</button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto bg-slate-900/5 flex items-center justify-center p-2 sm:p-4">
+          {arquivo.tipo === 'application/pdf' ? (
+            <iframe src={url} title="Documento aprovado" className="w-full h-full rounded-xl border border-slate-200 bg-white" />
+          ) : (
+            <img src={url} alt={arquivo.nomeArquivo} className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-md bg-white border border-slate-200" />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function ContratoForm({ cand, db, atualizarCandidato }) {
   const [form, setForm] = useState(() => ({
@@ -164,8 +208,26 @@ function ContratoForm({ cand, db, atualizarCandidato }) {
 
 function ArquivoPreview({ arquivo, nomeTagPorId }) {
   const [modalAberto, setModalAberto] = useState(false)
-  if (!arquivo) return null
+  const [url, setUrl] = useState(arquivo.dataUrl || null)
+  const [erroUrl, setErroUrl] = useState(false)
 
+  useEffect(() => {
+    let vivo = true
+    if (!url && arquivo.caminho && !erroUrl) {
+      urlArquivoFB(arquivo.caminho).then((u) => {
+        if (vivo) {
+          if (u) setUrl(u)
+          else setErroUrl(true)
+        }
+      })
+    }
+    return () => { vivo = false }
+  }, [arquivo.caminho, url, erroUrl])
+
+  if (erroUrl) return <p className="text-xs text-slate-400 mt-2">Visualização indisponível ({arquivo.nomeArquivo}).</p>
+  if (!url && !arquivo.dataUrl) return <p className="text-xs text-slate-400 mt-2">Carregando documento…</p>
+  const src = url || arquivo.dataUrl
+  if (!src) return null
   return (
     <div className="mt-2">
       {arquivo.dataUrl ? (
@@ -199,7 +261,7 @@ function ArquivoPreview({ arquivo, nomeTagPorId }) {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <a
-                      href={arquivo.dataUrl}
+                      href={src}
                       download={arquivo.nomeArquivo}
                       target="_blank"
                       rel="noreferrer"
@@ -222,13 +284,13 @@ function ArquivoPreview({ arquivo, nomeTagPorId }) {
                 <div className="flex-1 overflow-auto bg-slate-900/5 flex items-center justify-center p-2 sm:p-4">
                   {arquivo.tipo === 'application/pdf' ? (
                     <iframe
-                      src={arquivo.dataUrl}
+                      src={src}
                       title={arquivo.nomeArquivo}
                       className="w-full h-full rounded-xl border border-slate-200 bg-white"
                     />
                   ) : (
                     <img
-                      src={arquivo.dataUrl}
+                      src={src}
                       alt={arquivo.nomeArquivo}
                       className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-md bg-white border border-slate-200"
                     />
@@ -238,9 +300,7 @@ function ArquivoPreview({ arquivo, nomeTagPorId }) {
             </div>
           )}
         </>
-      ) : (
-        <p className="text-xs text-slate-400">Arquivo grande — visualização indisponível nesta demo ({arquivo.nomeArquivo}).</p>
-      )}
+      ) : null}
     </div>
   )
 }
@@ -830,36 +890,7 @@ export default function RhView({ db, atualizarCandidato, notificar }) {
       )}
 
       {/* Modal de visualização de documento aprovado (duplo clique no resumo) */}
-      {previewAprovado && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4" onClick={() => setPreviewAprovado(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full h-[90vh] flex flex-col overflow-hidden text-left border border-slate-200" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 bg-slate-50 shrink-0">
-              <div className="min-w-0 pr-4">
-                <h3 className="font-bold text-slate-900 text-base truncate flex items-center gap-2">
-                  <span>📄</span> {(previewAprovado.arquivo.tags || []).map((id) => docsPara(previewAprovado.cand).find((t) => t.id === id)?.nome || id).join(', ') || 'Documento'}
-                  <span className="badge badge-ok">✔ Aprovado</span>
-                </h3>
-                <p className="text-xs text-slate-500 truncate mt-0.5">
-                  Enviado em {new Date(previewAprovado.arquivo.enviadoEm).toLocaleString('pt-BR')}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <a href={previewAprovado.arquivo.dataUrl} download={previewAprovado.arquivo.nomeArquivo} target="_blank" rel="noreferrer" className="btn-outline btn-sm !text-xs !py-1 !px-2.5 flex items-center gap-1">
-                  <span>⬇</span> Baixar
-                </a>
-                <button type="button" onClick={() => setPreviewAprovado(null)} className="btn-outline btn-sm !text-xs !py-1 !px-2.5 font-bold hover:bg-slate-200">✕ Fechar</button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-auto bg-slate-900/5 flex items-center justify-center p-2 sm:p-4">
-              {previewAprovado.arquivo.tipo === 'application/pdf' ? (
-                <iframe src={previewAprovado.arquivo.dataUrl} title="Documento aprovado" className="w-full h-full rounded-xl border border-slate-200 bg-white" />
-              ) : (
-                <img src={previewAprovado.arquivo.dataUrl} alt={previewAprovado.arquivo.nomeArquivo} className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-md bg-white border border-slate-200" />
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {previewAprovado && <PreviewAprovado dados={previewAprovado} onFechar={() => setPreviewAprovado(null)} />}
     </div>
   )
 }

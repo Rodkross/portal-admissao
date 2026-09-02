@@ -1,0 +1,56 @@
+rules_version = '2';
+
+// Regras do Firestore — Portal de Admissão
+// Modelo simples baseado em campos do documento:
+//   - usuarios/{uid}: perfil 'rh' | 'recrutador'
+//   - candidatos/{id}: campo recrutador (nome) + cpf
+//   - config/geral: empresas e funções
+//   - notificacoes/{id}: { para, resumo, lida, data }
+// Em produção, considere Custom Claims para não depender de leitura do doc de usuário.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() {
+      return request.auth != null
+    }
+    function meuPerfil() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.perfil
+    }
+    function souRh() {
+      return logado() && meuPerfil() == 'rh'
+    }
+    function meuNome() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.nome
+    }
+
+    // Usuários internos: RH gerencia; cada usuário lê o próprio perfil.
+    match /usuarios/{uid} {
+      allow read: if logado() && (request.auth.uid == uid || souRh());
+      allow create, update, delete: if souRh();
+    }
+
+    // Configuração geral (empresas/funções): leitura para internos, escrita só RH.
+    match /config/{doc} {
+      allow read: if logado();
+      allow write: if souRh();
+    }
+
+    // Candidatos: RH tudo; recrutador só os seus; sem acesso anônimo direto
+    // (o portal do candidato opera com login anônimo limitado — ver nota no README).
+    match /candidatos/{candId} {
+      allow read: if souRh() || (logado() && meuPerfil() == 'recrutador' && resource.data.recrutador == meuNome());
+      allow create: if logado() && (souRh() || (meuPerfil() == 'recrutador' && request.resource.data.recrutador == meuNome()));
+      allow update, delete: if souRh() || (logado() && meuPerfil() == 'recrutador' && resource.data.recrutador == meuNome());
+    }
+
+    // Notificações: destinatário lê e marca como lida; internos criam.
+    match /notificacoes/{id} {
+      allow read: if logado() && (resource.data.para == request.auth.uid || resource.data.para == 'rh'
+                    || (logado() && meuPerfil() == 'recrutador' && resource.data.para == meuNome()));
+      allow create: if logado();
+      allow update: if logado(); // marcar como lida
+      allow delete: if souRh();
+    }
+  }
+}

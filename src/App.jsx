@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import { loadDB, saveDB } from './lib/storage'
-import { sessaoSalva, logout } from './lib/auth'
+import { observarCandidatos, observarSessao, logoutFB, observarNotificacoes, marcarNotificacoesLidasFB, notificarFB, criarCandidatoFB, atualizarCandidatoFB, observarConfig } from './lib/api'
 import RecrutadorView from './views/RecrutadorView'
 import CandidatoView from './views/CandidatoView'
 import RhView from './views/RhView'
@@ -14,30 +13,47 @@ const ABAS_INTERNAS = [
   { id: 'cadastros', label: 'Cadastros', emoji: '🏢', perfis: ['rh'] },
 ]
 
-// Migração: candidatos antigos foram gravados com recrutador fixo 'Recrutador'.
-// Ao abrir o portal, o recrutador logado assume a autoria desses cadastros.
-function carregarDbMigrado() {
-  const db = loadDB()
-  const usuario = sessaoSalva()
-  if (!usuario || usuario.perfil !== 'recrutador') return db
-  if (!db.candidatos?.some((c) => !c.recrutador || c.recrutador === 'Recrutador')) return db
-  const migrado = {
-    ...db,
-    candidatos: db.candidatos.map((c) =>
-      !c.recrutador || c.recrutador === 'Recrutador' ? { ...c, recrutador: usuario.nome } : c,
-    ),
-  }
-  saveDB(migrado)
-  return migrado
-}
-
 function App() {
-  const [db, setDb] = useState(carregarDbMigrado)
-  const [usuario, setUsuario] = useState(sessaoSalva)
+  const [db, setDb] = useState({ candidatos: [], notificacoes: [] })
+  const [usuario, setUsuario] = useState(null) // null = carregando; false = deslogado
+  const [carregando, setCarregando] = useState(true)
   const [perfil, setPerfil] = useState('recrutador')
   const [mHash] = useState(() => location.hash.match(/^#\/acesso\/(\d+)/))
   const [hashAtual, setHashAtual] = useState(location.hash)
   const [sinoAberto, setSinoAberto] = useState(false)
+
+  // Sessão (Firebase Auth)
+  useEffect(() => {
+    const unsub = observarSessao((u) => {
+      setUsuario(u || false)
+      setCarregando(false)
+    })
+    return unsub
+  }, [])
+
+  // Candidatos em tempo real
+  useEffect(() => {
+    const unsub = observarCandidatos((candidatos) => setDb((prev) => ({ ...prev, candidatos })))
+    return unsub
+  }, [])
+
+  // Configuração geral (empresas, funções)
+  useEffect(() => {
+    const unsub = observarConfig((config) => setDb((prev) => ({ ...prev, empresas: config.empresas || [], funcoes: config.funcoes || [] })))
+    return unsub
+  }, [])
+
+  const chaveNotificacoes = usuario?.perfil === 'rh' ? 'rh' : usuario?.nome || ''
+
+  // Notificações em tempo real (só para usuários internos)
+  useEffect(() => {
+    if (!usuario || !chaveNotificacoes) {
+      const t = setTimeout(() => setDb((prev) => (prev.notificacoes?.length ? { ...prev, notificacoes: [] } : prev)))
+      return () => clearTimeout(t)
+    }
+    const unsub = observarNotificacoes(chaveNotificacoes, (notificacoes) => setDb((prev) => ({ ...prev, notificacoes })))
+    return unsub
+  }, [usuario, chaveNotificacoes])
 
   useEffect(() => {
     const onChange = () => setHashAtual(location.hash)
@@ -51,36 +67,24 @@ function App() {
   const abasPermitidas = usuario ? ABAS_INTERNAS.filter((a) => a.perfis.includes(usuario.perfil)) : []
   const abaAtiva = abasPermitidas.some((a) => a.id === perfil) ? perfil : abasPermitidas[0]?.id
 
-  function atualizarDb(updater) {
-    setDb((prev) => {
-      const next = updater(prev)
-      saveDB(next)
-      return next
-    })
-  }
-
-  const setCandidatos = (lista) => atualizarDb((prev) => ({ ...prev, candidatos: lista }))
-  const atualizarCandidato = (id, fn) =>
-    atualizarDb((prev) => ({ ...prev, candidatos: prev.candidatos.map((c) => (c.id === id ? fn(c) : c)) }))
-
   /** Cria uma notificação interna. `para`: 'rh', nome do recrutador ou CPF do candidato. */
-  const notificar = (para, resumo, tipo = 'info') =>
-    atualizarDb((prev) => ({
-      ...prev,
-      notificacoes: [
-        { id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, data: new Date().toISOString(), para, tipo, resumo, lida: false },
-        ...(prev.notificacoes || []),
-      ].slice(0, 200),
-    }))
+  const notificar = (para, resumo, tipo = 'info') => notificarFB(para, resumo, tipo)
 
-  const notificacoesDoUsuario = (usuario?.perfil === 'rh' ? 'rh' : usuario?.nome)
-  const minhasNotificacoes = (db.notificacoes || []).filter((n) => n.para === notificacoesDoUsuario)
+  const notificacoesDoUsuario = chaveNotificacoes
+  const minhasNotificacoes = db.notificacoes || []
   const naoLidas = minhasNotificacoes.filter((n) => !n.lida).length
-  const marcarLidas = () =>
-    atualizarDb((prev) => ({
-      ...prev,
-      notificacoes: (prev.notificacoes || []).map((n) => (n.para === notificacoesDoUsuario ? { ...n, lida: true } : n)),
-    }))
+  const marcarLidas = () => marcarNotificacoesLidasFB(notificacoesDoUsuario)
+
+  // Assinaturas compatíveis com as views: operam direto no Firestore.
+  // setCandidatos: usado apenas pelo cadastro do recrutador (candidato novo).
+  const setCandidatos = (lista) => {
+    const novo = lista[lista.length - 1]
+    if (novo && !db.candidatos.some((c) => c.id === novo.id)) criarCandidatoFB(novo)
+  }
+  const atualizarCandidato = (id, fn) => {
+    const alvo = db.candidatos.find((c) => c.id === id)
+    if (alvo) atualizarCandidatoFB(id, fn)
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -155,7 +159,7 @@ function App() {
                 </span>
                 <div className="leading-tight">
                   <p className="text-xs font-semibold">{usuario.nome}</p>
-                  <button onClick={() => { logout(); setUsuario(null) }} className="text-[11px] text-slate-400 hover:text-white">Sair</button>
+                  <button onClick={async () => { await logoutFB(); setUsuario(false) }} className="text-[11px] text-slate-400 hover:text-white">Sair</button>
                 </div>
               </div>
             </div>
@@ -166,6 +170,8 @@ function App() {
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-8">
         {acessandoComoCandidato ? (
           <CandidatoView db={db} cpf={cpfAtivo} atualizarCandidato={atualizarCandidato} notificar={notificar} />
+        ) : carregando ? (
+          <div className="py-20 text-center text-slate-400 text-sm">Carregando…</div>
         ) : !usuario ? (
           <div className="max-w-sm mx-auto space-y-5">
             <div className="grid grid-cols-2 gap-2 bg-white rounded-xl border border-slate-200 p-1.5 shadow-[0_1px_2px_rgb(16_24_40/0.06)]">
@@ -180,12 +186,12 @@ function App() {
         ) : abaAtiva === 'rh' ? (
           <RhView db={db} atualizarCandidato={atualizarCandidato} notificar={notificar} />
         ) : abaAtiva === 'cadastros' ? (
-          <CadastrosView db={db} atualizarDb={atualizarDb} usuarioAtual={usuario} />
+          <CadastrosView db={db} usuarioAtual={usuario} />
         ) : null}
       </main>
 
       <footer className="max-w-5xl mx-auto w-full px-4 pb-8 pt-4 text-center text-xs text-slate-400">
-        Portal de Admissão · Dados armazenados localmente (demo). Em produção: backend próprio + API WhatsApp Business.
+        Portal de Admissão · Dados no Firebase (Firestore + Storage) · Região sugerida: southamerica-east1
       </footer>
     </div>
   )

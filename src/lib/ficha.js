@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf'
 import { statusDocumentos, maskCPF, maskPhone, docsPara, calcularIdade, isMotociclista } from './storage'
+import { urlArquivoFB } from './api'
 
 const statusLabel = { pendente: 'PENDENTE', aprovado: 'APROVADO', reprovado: 'REPROVADO' }
 
@@ -163,12 +164,32 @@ export async function gerarFichaPDF(candidato) {
       doc.text(doc.splitTextToSize(`Enviado em ${new Date(arq.enviadoEm).toLocaleString('pt-BR')}`, larguraUtil), M, y + 4)
       y += 10
 
+      // resolve a URL do documento (Firebase Storage) quando necessário
+      let src = arq.dataUrl || null
+      if (!src && arq.caminho) {
+        try {
+          src = await urlArquivoFB(arq.caminho)
+        } catch { src = null }
+      }
+      if (src && /^https?:/i.test(src) && arq.tipo?.startsWith('image/')) {
+        // converte a URL remota em dataURL para embutir no PDF
+        try {
+          const blob = await fetch(src).then((r) => r.blob())
+          src = await new Promise((ok, falhou) => {
+            const fr = new FileReader()
+            fr.onload = () => ok(String(fr.result))
+            fr.onerror = falhou
+            fr.readAsDataURL(blob)
+          })
+        } catch { src = null }
+      }
+
       // embute imagem (qualquer image/*) direto no PDF
-      const ehImagem = arq.dataUrl && /^data:image\//i.test(arq.dataUrl)
+      const ehImagem = src && /^data:image\//i.test(src)
       if (ehImagem) {
         try {
           // jsPDF só embute PNG/JPEG nativamente; converte outros formatos (webp etc.) via canvas
-          let data = arq.dataUrl
+          let data = src
           if (!/^data:image\/(jpeg|jpg|png);/i.test(data)) {
             data = await converterParaJpeg(data)
           }
@@ -188,7 +209,7 @@ export async function gerarFichaPDF(candidato) {
       } else {
         doc.setTextColor(160)
         doc.setFontSize(8.5)
-        doc.text(arq.dataUrl ? '(documento PDF anexado — baixe pelo portal para visualizar)' : '(arquivo grande — sem cópia armazenada nesta demo; baixe pelo portal)', M, y)
+        doc.text(src ? '(documento PDF anexado — baixe pelo portal para visualizar)' : '(visualização do arquivo indisponível; baixe pelo portal)', M, y)
         doc.setTextColor(30)
         y += 8
       }

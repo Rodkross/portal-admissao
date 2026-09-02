@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { listarUsuarios, criarUsuario, removerUsuario } from '../lib/auth'
+import { useEffect, useState } from 'react'
+import { observarUsuarios, criarUsuarioFB, removerUsuarioFB, salvarConfigFB } from '../lib/api'
 
-export default function CadastrosView({ db, atualizarDb, usuarioAtual }) {
+export default function CadastrosView({ db, usuarioAtual }) {
   const [abaAtiva, setAbaAtiva] = useState('empresas') // 'empresas' | 'funcoes' | 'usuarios'
 
   // --- Estado Empresas ---
@@ -14,13 +14,15 @@ export default function CadastrosView({ db, atualizarDb, usuarioAtual }) {
   const [msgFuncao, setMsgFuncao] = useState(null)
   const funcoes = db?.funcoes || []
 
-  // --- Estado Usuários ---
-  const [usuarios, setUsuarios] = useState(listarUsuarios)
+  // --- Estado Usuários (Firestore, tempo real) ---
+  const [usuarios, setUsuarios] = useState([])
   const [nomeUsuario, setNomeUsuario] = useState('')
   const [emailUsuario, setEmailUsuario] = useState('')
   const [senhaUsuario, setSenhaUsuario] = useState('')
   const [perfilUsuario, setPerfilUsuario] = useState('recrutador')
   const [msgUsuario, setMsgUsuario] = useState(null)
+
+  useEffect(() => observarUsuarios(setUsuarios), [])
 
   // Handlers Empresas
   function addEmpresa(e) {
@@ -30,7 +32,7 @@ export default function CadastrosView({ db, atualizarDb, usuarioAtual }) {
     if (empresas.some((emp) => emp.toLowerCase() === nome.toLowerCase())) {
       return setMsgEmpresa({ tipo: 'erro', texto: 'Essa empresa já está cadastrada.' })
     }
-    atualizarDb?.((prev) => ({
+    salvarConfigFB((prev) => ({
       ...prev,
       empresas: [...(prev.empresas || []), nome],
     }))
@@ -42,7 +44,7 @@ export default function CadastrosView({ db, atualizarDb, usuarioAtual }) {
     if (empresas.length <= 1) {
       return setMsgEmpresa({ tipo: 'erro', texto: 'É necessário manter ao menos uma empresa cadastrada.' })
     }
-    atualizarDb?.((prev) => ({
+    salvarConfigFB((prev) => ({
       ...prev,
       empresas: (prev.empresas || []).filter((item) => item !== emp),
     }))
@@ -57,7 +59,7 @@ export default function CadastrosView({ db, atualizarDb, usuarioAtual }) {
     if (funcoes.some((fnc) => fnc.toLowerCase() === nome.toLowerCase())) {
       return setMsgFuncao({ tipo: 'erro', texto: 'Essa função já está cadastrada.' })
     }
-    atualizarDb?.((prev) => ({
+    salvarConfigFB((prev) => ({
       ...prev,
       funcoes: [...(prev.funcoes || []), nome],
     }))
@@ -69,7 +71,7 @@ export default function CadastrosView({ db, atualizarDb, usuarioAtual }) {
     if (funcoes.length <= 1) {
       return setMsgFuncao({ tipo: 'erro', texto: 'É necessário manter ao menos uma função cadastrada.' })
     }
-    atualizarDb?.((prev) => ({
+    salvarConfigFB((prev) => ({
       ...prev,
       funcoes: (prev.funcoes || []).filter((item) => item !== fnc),
     }))
@@ -77,31 +79,27 @@ export default function CadastrosView({ db, atualizarDb, usuarioAtual }) {
   }
 
   // Handlers Usuários
-  function sincronizarUsuarios() {
-    setUsuarios(listarUsuarios())
-  }
-
   function addUsuario(e) {
     e.preventDefault()
     if (!nomeUsuario.trim()) return setMsgUsuario({ tipo: 'erro', texto: 'Informe o nome do usuário.' })
     if (!/^\S+@\S+\.\S+$/.test(emailUsuario)) return setMsgUsuario({ tipo: 'erro', texto: 'E-mail inválido.' })
     if (senhaUsuario.length < 6) return setMsgUsuario({ tipo: 'erro', texto: 'A senha deve ter ao menos 6 caracteres.' })
 
-    const r = criarUsuario({ nome: nomeUsuario.trim().toUpperCase(), email: emailUsuario.trim().toLowerCase(), senha: senhaUsuario, perfil: perfilUsuario }, usuarioAtual)
-    if (!r.ok) return setMsgUsuario({ tipo: 'erro', texto: r.erro })
-
-    setNomeUsuario('')
-    setEmailUsuario('')
-    setSenhaUsuario('')
-    setMsgUsuario({ tipo: 'ok', texto: `Usuário ${r.usuario.nome} cadastrado com perfil ${r.usuario.perfil === 'rh' ? 'RH' : 'Recrutador'}.` })
-    sincronizarUsuarios()
+    criarUsuarioFB({ nome: nomeUsuario.trim().toUpperCase(), email: emailUsuario.trim().toLowerCase(), senha: senhaUsuario, perfil: perfilUsuario }, usuarioAtual)
+      .then((r) => {
+        if (!r.ok) return setMsgUsuario({ tipo: 'erro', texto: r.erro })
+        setNomeUsuario('')
+        setEmailUsuario('')
+        setSenhaUsuario('')
+        setMsgUsuario({ tipo: 'ok', texto: `Usuário ${nomeUsuario.trim().toUpperCase()} cadastrado com perfil ${perfilUsuario === 'rh' ? 'RH' : 'Recrutador'}.` })
+      })
   }
 
   function deletarUsuario(u) {
-    const r = removerUsuario(u.id, usuarioAtual)
-    if (!r.ok) return setMsgUsuario({ tipo: 'erro', texto: r.erro })
-    setMsgUsuario({ tipo: 'ok', texto: `Usuário ${u.nome} removido.` })
-    sincronizarUsuarios()
+    removerUsuarioFB(u.id, usuarioAtual).then((r) => {
+      if (!r.ok) return setMsgUsuario({ tipo: 'erro', texto: r.erro })
+      setMsgUsuario({ tipo: 'ok', texto: `Usuário ${u.nome} removido. (A conta de login permanente é removida pelo administrador do Firebase.)` })
+    })
   }
 
   return (

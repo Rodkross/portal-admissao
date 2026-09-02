@@ -5,6 +5,8 @@ import FichaCandidato from './FichaCandidato'
 const MAX_MB = 5
 
 /** Reduz/comprime uma imagem grande via canvas para caber no localStorage. */
+import { enviarArquivoFB, excluirArquivoFB } from '../lib/api'
+
 function comprimirImagem(file, maxLado = 1600, qualidade = 0.8) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -212,6 +214,7 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
       ...c,
       arquivos: (c.arquivos || []).filter((a) => a.id !== alvo.id),
     }))
+    excluirArquivoFB(candidato.id, alvo.id, alvo.nomeArquivo)
     fecharModal()
   }
 
@@ -219,15 +222,15 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
     if (!tagsSelecionadas.length) return setErroLocal('Selecione pelo menos uma informação que este documento comprova.')
     const alvo = editando
     const substituto = arquivoPendente // File novo, se trocado
-    const aplicar = (dataUrl) => {
-      atualizarCandidato(candidato.id, (c) => ({
+    const aplicar = async (novoCaminho) => {
+      await atualizarCandidato(candidato.id, (c) => ({
         ...c,
         arquivos: (c.arquivos || []).map((a) =>
           a.id === alvo.id
             ? {
                 ...a,
                 ...(substituto
-                  ? { nomeArquivo: substituto.name, tipo: substituto.type, tamanho: substituto.size, dataUrl }
+                  ? { nomeArquivo: substituto.name, tipo: substituto.type, tamanho: substituto.size, caminho: novoCaminho }
                   : {}),
                 tags: tagsSelecionadas,
                 // volta para análise do RH (mesmo que já estivesse aprovado/reprovado)
@@ -241,36 +244,43 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
       fecharModal()
     }
     try {
-      if (substituto && substituto.size > 1.5 * 1024 * 1024 && substituto.type.startsWith('image/')) {
-        aplicar(await comprimirImagem(substituto))
-      } else if (substituto && substituto.size > 1.5 * 1024 * 1024) {
-        aplicar(null) // arquivos grandes não-imagem: só metadados (demo com localStorage)
-      } else if (substituto) {
-        const reader = new FileReader()
-        reader.onload = () => aplicar(String(reader.result))
-        reader.readAsDataURL(substituto)
+      if (substituto) {
+        const blob = (substituto.size > 1.5 * 1024 * 1024 && substituto.type.startsWith('image/'))
+          ? await (async () => { const d = await comprimirImagem(substituto); return fetch(d).then((r) => r.blob()) })()
+          : substituto
+        const caminho = await enviarArquivoFB(candidato.id, alvo.id, blob)
+        // remove a versão antiga do Storage se o nome mudou
+        if (alvo.nomeArquivo !== substituto.name) excluirArquivoFB(candidato.id, alvo.id, alvo.nomeArquivo)
+        await aplicar(caminho)
       } else {
-        aplicar()
+        await aplicar()
       }
     } catch {
-      aplicar(null)
+      setErroLocal('Falha ao atualizar o arquivo. Tente novamente.')
     }
   }
 
   async function confirmarUpload() {
     if (!tagsSelecionadas.length) return setErroLocal('Selecione pelo menos uma informação que este documento comprova.')
     const file = arquivoPendente
-    const salvar = (dataUrl) => {
-      atualizarCandidato(candidato.id, (c) => ({
+    const salvar = async (blob) => {
+      const arqId = newId('arq')
+      let caminho = null
+      try {
+        caminho = await enviarArquivoFB(candidato.id, arqId, blob)
+      } catch {
+        return setErroLocal('Falha ao enviar o arquivo. Verifique sua conexão e tente de novo.')
+      }
+      await atualizarCandidato(candidato.id, (c) => ({
         ...c,
         arquivos: [
           ...(c.arquivos || []),
           {
-            id: newId('arq'),
+            id: arqId,
             nomeArquivo: file.name,
             tipo: file.type,
             tamanho: file.size,
-            dataUrl,
+            caminho, // referência no Firebase Storage (não guardamos mais dataUrl)
             tags: tagsSelecionadas,
             status: 'pendente',
             observacao: '',
@@ -285,19 +295,13 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
       setTagsSelecionadas([])
       setErroLocal('')
     }
-    try {
-      if (file.size > 1.5 * 1024 * 1024 && file.type.startsWith('image/')) {
-        // imagens grandes: comprime via canvas para poderem ser embutidas no PDF
-        salvar(await comprimirImagem(file))
-      } else if (file.size > 1.5 * 1024 * 1024) {
-        salvar(null) // arquivos grandes não-imagem: só metadados (demo com localStorage)
-      } else {
-        const reader = new FileReader()
-        reader.onload = () => salvar(String(reader.result))
-        reader.readAsDataURL(file)
-      }
-    } catch {
-      salvar(null)
+    // Imagens grandes são comprimidas; o arquivo final vai direto ao Storage.
+    if (file.size > 1.5 * 1024 * 1024 && file.type.startsWith('image/')) {
+      const blob = await comprimirImagem(file)
+      const resp = await fetch(blob)
+      await salvar(await resp.blob())
+    } else {
+      await salvar(file)
     }
   }
 

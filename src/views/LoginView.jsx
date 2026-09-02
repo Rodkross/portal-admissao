@@ -1,14 +1,17 @@
 import { useState } from 'react'
-import { login } from '../lib/auth'
+import { loginFB } from '../lib/api'
 
 export default function LoginView({ perfilEsperado, onLogado }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
+  const [entrando, setEntrando] = useState(false)
 
-  function entrar(e) {
+  async function entrar(e) {
     e.preventDefault()
-    const r = login(email, senha, perfilEsperado)
+    setEntrando(true)
+    const r = await loginFB(email, senha, perfilEsperado)
+    setEntrando(false)
     if (!r.ok) return setErro(r.erro)
     setErro('')
     onLogado(r.usuario)
@@ -44,8 +47,8 @@ export default function LoginView({ perfilEsperado, onLogado }) {
           />
         </label>
         {erro && <p className="alert-error">{erro}</p>}
-        <button className="btn-primary w-full">
-          Entrar
+        <button className="btn-primary w-full" disabled={entrando}>
+          {entrando ? 'Entrando…' : 'Entrar'}
         </button>
       </form>
     </div>

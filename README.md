@@ -2,7 +2,7 @@
 
 Aplicação web para documentação de novos colaboradores: recrutadores cadastram candidatos e enviam links de acesso via WhatsApp, o candidato sobe seus documentos pela página pública, e o RH valida a documentação e gera a ficha de admissão em PDF.
 
-> ⚠️ **Projeto demo** — não há backend. Todos os dados (candidatos, usuários, arquivos) são armazenados no navegador via `localStorage`/`sessionStorage`. Em produção, substitua por uma API própria e integre a WhatsApp Business API.
+> ⚠️ **Backend: Firebase** — Auth (login interno), Firestore (candidatos, notificações, configurações) e Storage (documentos em bucket privado). Configure com o arquivo `.env` (copie `.env.example`) a partir de um projeto Firebase — recomenda-se região `southamerica-east1` (São Paulo) para adequação à LGPD.
 
 ## Funcionalidades
 
@@ -39,14 +39,29 @@ O RH pode baixar a **Ficha de Admissão** em PDF (via `jsPDF`), contendo todos o
 | `recrutador` | Aba Recrutador (cadastro e convites) |
 | `rh` | Abas Validação e Cadastros |
 
-Usuário inicial (seed): **rh@empresa.com** / **admin123** (perfil RH). A sessão dura enquanto a aba do navegador estiver aberta (`sessionStorage`).
+Usuário inicial: crie o primeiro acesso no **Console do Firebase → Authentication → E-mail/senha** (ex.: `rh@empresa.com`), e depois em **Firestore → coleção `usuarios`**, crie um documento com ID igual ao **UID** do usuário criado contendo:
+
+```json
+{ "nome": "Administrador RH", "email": "rh@empresa.com", "perfil": "rh" }
+```
+
+Depois disso, os demais usuários (RH e recrutadores) podem ser criados pela aba **Cadastros → Usuários** dentro do portal.
+
+## Setup do Firebase (uma vez)
+
+1. Crie um projeto em [console.firebase.google.com](https://console.firebase.google.com) (região **southamerica-east1**).
+2. Ative **Authentication → E-mail/senha**.
+3. Crie o **Firestore** (modo produção) e o **Storage**.
+4. Copie `.env.example` para `.env` e preencha com as credenciais do app Web (Configurações do projeto → Seus apps).
+5. Publique as regras: `firebase deploy --only firestore:rules,storage` (ou cole o conteúdo de `firestore.rules`/`storage.rules` no Console).
+6. Coleção inicial: `config/geral` com `{ "empresas": [...], "funcoes": [...] }` (opcional — o app funciona sem, e o RH cadastra pela aba Cadastros).
 
 ## Stack técnica
 
 - [React 19](https://react.dev) + [Vite 8](https://vite.dev)
+- [Firebase](https://firebase.google.com) — Auth (e-mail/senha), Firestore (tempo real) e Storage (documentos)
 - [Tailwind CSS 4](https://tailwindcss.com) (plugin `@tailwindcss/vite`)
 - [jsPDF](https://github.com/parallax/jsPDF) — geração da ficha em PDF
-- [lucide-react](https://lucide.dev) — ícones
 - ESLint 10 (`eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`)
 - Roteamento simples por `location.hash` (sem react-router)
 
@@ -56,22 +71,27 @@ Usuário inicial (seed): **rh@empresa.com** / **admin123** (perfil RH). A sessã
 ├── index.html                  # HTML raiz
 ├── vite.config.js              # Configuração do Vite (React + Tailwind)
 ├── eslint.config.js            # Configuração do ESLint
+├── .env.example                # Modelo das credenciais do Firebase
+├── firestore.rules             # Regras de segurança do Firestore
+├── storage.rules               # Regras de segurança do Storage
 ├── public/
 │   ├── favicon.svg
 │   └── icons.svg
 └── src/
     ├── main.jsx                # Bootstrap do React
-    ├── App.jsx                 # Layout, abas e roteamento por hash
+    ├── App.jsx                 # Layout, abas, notificações e roteamento por hash
     ├── index.css / App.css     # Estilos (Tailwind + tema brand)
     ├── assets/
     └── lib/
-    │   ├── auth.js             # Login/sessão/usuários (localStorage + sessionStorage)
-    │   ├── storage.js          # Persistência, validação de CPF, máscaras, documentos exigidos
-    │   └── ficha.js            # Linhas da ficha + geração do PDF (jsPDF)
+        ├── firebase.js         # Inicialização do Firebase (Auth/Firestore/Storage)
+        ├── api.js              # Camada de dados: auth, candidatos, notificações, arquivos
+        ├── auth.js             # [legado] auth em localStorage — desativado
+        ├── storage.js          # Documentos exigidos, máscaras, validação de CPF
+        └── ficha.js            # Linhas da ficha + geração do PDF (jsPDF)
     └── views/
-        ├── LoginView.jsx       # Tela de login interno
+        ├── LoginView.jsx       # Tela de login interno (Firebase Auth)
         ├── RecrutadorView.jsx  # Cadastro de candidatos e convites via WhatsApp
-        ├── CandidatoView.jsx   # Área pública do candidato (ficha + uploads)
+        ├── CandidatoView.jsx   # Área pública do candidato (ficha + uploads no Storage)
         ├── RhView.jsx          # Painel de admissões e validação de documentos pelo RH
         ├── CadastrosView.jsx   # Gestão centralizada de empresas, funções e usuários internos
         └── FichaCandidato.jsx  # Visualização da ficha do candidato
@@ -112,9 +132,13 @@ Chaves de armazenamento no navegador:
 
 | Chave | Conteúdo |
 |---|---|
-| `portal-admissao:v1` | Banco de candidatos (`localStorage`) |
-| `portal-admissao:users:v1` | Usuários internos (`localStorage`) |
-| `portal-admissao:session:v1` | Sessão ativa (`sessionStorage`) |
+| (nenhuma obrigatória) | Sessão e dados agora vivem no Firebase; nada sensível fica no localStorage |
+
+## Regras de segurança (resumo)
+
+- `firestore.rules` — RH lê/escreve tudo; recrutador lê/escreve apenas candidatos onde `recrutador == nome dele`; acesso anônimo apenas ao próprio candidato por CPF (composição limitada); `usuarios` só é escrito pelo RH.
+- `storage.rules` — documentos em `documentos/{candidatoId}/…` são privados: leitura para RH, recrutador dono e o próprio candidato; escrita apenas do dono.
+- **Nota:** para regras mais rígidas em produção, migre a verificação de perfil para Custom Claims do Firebase Auth (via Admin SDK) e restrinja o acesso anônimo do candidato.
 
 ## Tipos de documento exigidos
 
@@ -130,6 +154,7 @@ Chaves de armazenamento no navegador:
 
 ## Roadmap / melhorias para produção
 
-- Backend com autenticação real (bcrypt/argon2 + tokens de sessão) e armazenamento de arquivos (S3 ou similar).
+- Custom Claims no Firebase Auth (perfil `rh`/`recrutador` no token) para regras mais rígidas.
+- Cloud Function para excluir a conta de login ao remover usuário no portal (requer Admin SDK).
 - Integração com a API oficial do WhatsApp Business para envio dos convites.
-- Notificações e histórico de auditoria das validações.
+- Auditoria completa (historia de todas as ações) em coleção dedicada.
