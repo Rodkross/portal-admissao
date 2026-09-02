@@ -442,7 +442,7 @@ export default function RhView({ db, atualizarCandidato }) {
               return (
                 <button
                   key={c.id}
-                  onClick={() => setSelecionado(c.id)}
+                  onClick={() => setSelecionado((prev) => (prev === c.id ? null : c.id))}
                   className={`w-full border rounded-xl p-3.5 flex flex-wrap sm:flex-nowrap justify-between items-center text-left transition gap-3 ${
                     isSelected
                       ? 'border-brand-500 bg-brand-50/70 ring-2 ring-brand-300 shadow-sm'
