@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import { statusDocumentos, maskCPF, maskPhone, docsPara, calcularIdade } from './storage'
+import { statusDocumentos, maskCPF, maskPhone, docsPara, calcularIdade, isMotociclista } from './storage'
 
 const statusLabel = { pendente: 'PENDENTE', aprovado: 'APROVADO', reprovado: 'REPROVADO' }
 
@@ -46,7 +46,7 @@ export function fichaLinhas(c) {
     ['Chave Pix', f.chavePix],
     ['Banco', f.banco],
   ]
-  if (c.motociclista) linhas.push(['CNH', [f.cnhNumero ? `nº ${f.cnhNumero}` : '', f.cnhCategoria ? `cat. ${f.cnhCategoria}` : ''].filter(Boolean).join(' · ')])
+  if (isMotociclista(c)) linhas.push(['CNH', [f.cnhNumero ? `nº ${f.cnhNumero}` : '', f.cnhCategoria ? `cat. ${f.cnhCategoria}` : ''].filter(Boolean).join(' · ')])
   if (c.sexo === 'M') linhas.push(['Certificado de reservista', f.reservista])
   if (ct.salario) linhas.push(['Salário', ct.salario])
   if (ct.horario) linhas.push(['Horário de trabalho', ct.horario])

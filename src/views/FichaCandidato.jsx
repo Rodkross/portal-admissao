@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { onlyDigits, maskCEP, maskCPF, maskPhone, statusDocumentos, calcularIdade, newId } from '../lib/storage'
+import { onlyDigits, maskCEP, maskCPF, maskPhone, statusDocumentos, calcularIdade, newId, isMotociclista } from '../lib/storage'
 
 const ESCOLARIDADES = [
   'Fundamental incompleto', 'Fundamental completo', 'Médio incompleto', 'Médio completo',
@@ -27,6 +27,7 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
     return {
       ...FICHA_VAZIA,
       nome: candidato.nome || '',
+      telefone: f.telefone || candidato.telefone || '',
       ...f,
       temFilhos: f.temFilhos ?? (deps.length > 0),
       numFilhos: f.numFilhos ?? (deps.length || 0),
@@ -38,9 +39,7 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
   const [salvo, setSalvo] = useState(false)
   const [erro, setErro] = useState('')
 
-
-
-  const motociclista = !!candidato.motociclista
+  const motociclista = isMotociclista(candidato)
   const homem = candidato.sexo === 'M'
   const status = statusDocumentos(candidato)
   const statusDe = (docId) => status.find((s) => s.docId === docId)

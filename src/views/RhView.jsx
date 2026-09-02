@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { maskCPF, maskPhone, waLink, statusDocumentos, documentosFaltantes, docsPara, onlyDigits } from '../lib/storage'
+import { maskCPF, maskPhone, waLink, statusDocumentos, documentosFaltantes, docsPara, onlyDigits, isMotociclista } from '../lib/storage'
 import { gerarFichaPDF, fichaLinhas } from '../lib/ficha'
 
 const CONTRATO_VAZIO = { empresa: '', funcao: '', horista: false, salario: '', horario: '', folga: '', dataAdmissao: '' }
@@ -159,26 +159,78 @@ function ContratoForm({ cand, db, atualizarCandidato }) {
 }
 
 function ArquivoPreview({ arquivo }) {
-  const [mostrar, setMostrar] = useState(false)
+  const [modalAberto, setModalAberto] = useState(false)
   if (!arquivo) return null
+
   return (
     <div className="mt-2">
       {arquivo.dataUrl ? (
         <>
           <button
             type="button"
-            onClick={() => setMostrar(!mostrar)}
-            className="text-xs text-brand-600 font-medium hover:underline cursor-pointer"
+            onClick={() => setModalAberto(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg transition cursor-pointer"
           >
-            {mostrar ? 'Ocultar pré-visualização' : '👁 Visualizar documento'}
+            <span>🔍</span> Visualizar documento completo
           </button>
-          {mostrar && (
-            <div className="mt-2 border rounded-lg overflow-hidden max-h-72">
-              {arquivo.tipo === 'application/pdf' ? (
-                <iframe src={arquivo.dataUrl} title="Documento" className="w-full h-72" />
-              ) : (
-                <img src={arquivo.dataUrl} alt="Documento" className="max-h-72 object-contain" />
-              )}
+
+          {modalAberto && (
+            <div
+              className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4"
+              onClick={() => setModalAberto(false)}
+            >
+              <div
+                className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full h-[90vh] flex flex-col overflow-hidden text-left border border-slate-200"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Cabeçalho do Modal */}
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 bg-slate-50 shrink-0">
+                  <div className="min-w-0 pr-4">
+                    <h3 className="font-bold text-slate-900 text-base truncate flex items-center gap-2">
+                      <span>📄</span> {arquivo.nomeArquivo}
+                    </h3>
+                    <p className="text-xs text-slate-500 truncate mt-0.5">
+                      Enviado em {new Date(arquivo.enviadoEm).toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <a
+                      href={arquivo.dataUrl}
+                      download={arquivo.nomeArquivo}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-outline btn-sm !text-xs !py-1 !px-2.5 flex items-center gap-1"
+                    >
+                      <span>⬇</span> Baixar
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setModalAberto(false)}
+                      className="btn-outline btn-sm !text-xs !py-1 !px-2.5 font-bold hover:bg-slate-200"
+                      title="Fechar"
+                    >
+                      ✕ Fechar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Conteúdo do Documento em tela cheia/ampla */}
+                <div className="flex-1 overflow-auto bg-slate-900/5 flex items-center justify-center p-2 sm:p-4">
+                  {arquivo.tipo === 'application/pdf' ? (
+                    <iframe
+                      src={arquivo.dataUrl}
+                      title={arquivo.nomeArquivo}
+                      className="w-full h-full rounded-xl border border-slate-200 bg-white"
+                    />
+                  ) : (
+                    <img
+                      src={arquivo.dataUrl}
+                      alt={arquivo.nomeArquivo}
+                      className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-md bg-white border border-slate-200"
+                    />
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </>
@@ -485,7 +537,7 @@ export default function RhView({ db, atualizarCandidato }) {
                 {cand.ficha?.atualizadoEm && <span className="badge badge-ok">Ficha enviada</span>}
               </div>
               <p className="text-sm text-slate-500 mt-0.5">
-                CPF {maskCPF(cand.cpf)} · {maskPhone(cand.telefone)} · {cand.sexo === 'M' ? 'Masculino' : 'Feminino'}{cand.motociclista ? ' · 🏍 Motociclista' : ''} · Recrutador: <strong>{cand.recrutador || '—'}</strong>
+                CPF {maskCPF(cand.cpf)} · {maskPhone(cand.telefone)} · {cand.sexo === 'M' ? 'Masculino' : 'Feminino'}{isMotociclista(cand) ? ' · 🏍 Motociclista' : ''} · Recrutador: <strong>{cand.recrutador || '—'}</strong>
               </p>
               <p className="text-sm mt-1.5 flex items-center gap-2 flex-wrap">
                 <span className="text-slate-500 font-medium">Empresa:</span>

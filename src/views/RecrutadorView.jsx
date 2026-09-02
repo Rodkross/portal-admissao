@@ -9,6 +9,7 @@ import {
   waLink,
   statusDocumentos,
   documentosFaltantes,
+  isMotociclista,
 } from '../lib/storage'
 
 export default function RecrutadorView({ db, setCandidatos, usuario }) {
@@ -59,6 +60,7 @@ export default function RecrutadorView({ db, setCandidatos, usuario }) {
 
     const empresaFinal = empresa.trim() || empresasDisponiveis[0] || 'Empresa Geral'
     const funcaoFinal = funcao.trim() || funcoesDisponiveis[0] || 'Geral'
+    const ehMoto = isMotociclista({ funcao: funcaoFinal, motociclista })
 
     const candidato = {
       id: newId('cand'),
@@ -66,7 +68,7 @@ export default function RecrutadorView({ db, setCandidatos, usuario }) {
       cpf: d,
       telefone: onlyDigits(telefone),
       sexo,
-      motociclista,
+      motociclista: ehMoto,
       empresa: empresaFinal,
       funcao: funcaoFinal,
       horista: !!horista,
@@ -447,15 +449,12 @@ export default function RecrutadorView({ db, setCandidatos, usuario }) {
                 </select>
               </label>
 
-              <label className="text-sm flex items-center gap-2 sm:col-span-2 pt-1">
-                <input
-                  type="checkbox"
-                  checked={motociclista}
-                  onChange={(e) => setMotociclista(e.target.checked)}
-                  className="size-4 rounded accent-brand-600"
-                />
-                <span className="text-slate-600">Motociclista (exige CNH A + CRLV)</span>
-              </label>
+              {isMotociclista({ funcao, motociclista }) && (
+                <div className="sm:col-span-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center gap-2">
+                  <span>🏍️</span>
+                  <span><strong>Função de Motociclista/Entregador:</strong> exigirá envio de CNH Categoria A e documento da moto (CRLV).</span>
+                </div>
+              )}
               {erro && <p className="sm:col-span-2 text-sm text-red-600 font-medium">{erro}</p>}
               <div className="sm:col-span-2 flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button type="button" onClick={fecharModal} className="btn-outline">

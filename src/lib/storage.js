@@ -97,6 +97,17 @@ export function calcularIdade(dataNasc) {
   return Math.max(0, idade)
 }
 
+export function isMotociclista(candidato) {
+  if (!candidato) return false
+  const funcao = (candidato.contrato?.funcao || candidato.funcao || '').toLowerCase()
+  const ehFuncaoMoto =
+    funcao.includes('moto') ||
+    funcao.includes('motoboy') ||
+    funcao.includes('motociclista') ||
+    funcao.includes('motoqueiro')
+  return !!candidato.motociclista || ehFuncaoMoto
+}
+
 // Lista de documentos exigidos. Condição define se é obrigatório para o candidato.
 export const DOC_TIPOS = [
   { id: 'rg', nome: 'RG', obrigatorio: () => true },
@@ -105,8 +116,8 @@ export const DOC_TIPOS = [
   { id: 'titulo', nome: 'Título de Eleitor', obrigatorio: () => true },
   { id: 'pis', nome: 'PIS', obrigatorio: (c) => !(c.ficha?.primeiroEmprego) },
   { id: 'reservista', nome: 'Certificado de Reservista', obrigatorio: (c) => c.sexo === 'M' },
-  { id: 'cnh', nome: 'Habilitação Categoria A', obrigatorio: (c) => !!c.motociclista },
-  { id: 'doc_moto', nome: 'Documento da Motocicleta (CRLV)', obrigatorio: (c) => !!c.motociclista },
+  { id: 'cnh', nome: 'Habilitação Categoria A', obrigatorio: (c) => isMotociclista(c) },
+  { id: 'doc_moto', nome: 'Documento da Motocicleta (CRLV)', obrigatorio: (c) => isMotociclista(c) },
 ]
 
 export function docsPara(candidato) {
