@@ -267,7 +267,7 @@ function arquivosAtivos(cand) {
 
 const ORDEM_PRIORIDADE = { doc_enviada: 0, reprovado: 1, andamento: 2, aprovado: 3 }
 
-export default function RhView({ db, atualizarCandidato }) {
+export default function RhView({ db, atualizarCandidato, notificar }) {
   const [selecionado, setSelecionado] = useState(null)
   const [filtro, setFiltro] = useState('todos') // 'todos' | 'aprovado' | 'reprovado' | 'andamento'
   const [busca, setBusca] = useState('')
@@ -342,6 +342,17 @@ export default function RhView({ db, atualizarCandidato }) {
       ...c,
       arquivos: (c.arquivos || []).map((a) => (a.id === arquivoId ? { ...a, status, observacao } : a)),
     }))
+    const alvo = db.candidatos.find((c) => c.id === candidato.id)
+    const nomeDoc = (alvo?.arquivos || []).find((a) => a.id === arquivoId)
+    const nomeCurto = (nomeDoc?.tags || []).length ? `documento (${nomeDoc.tags.join(', ')})` : 'documento'
+    const tudoOk = alvo ? statusDocumentos(alvo).every((d) => !d.arquivo || d.status === 'aprovado') : false
+    if (status === 'aprovado') {
+      notificar(alvo?.cpf, `✔ Boa notícia! Seu ${nomeCurto} foi aprovado pelo RH.${tudoOk ? ' Documentação completa validada! 🎉' : ''}`)
+      if (alvo?.recrutador) notificar(alvo.recrutador, `✔ RH aprovou o ${nomeCurto} de ${alvo.nome}.`)
+    } else {
+      notificar(alvo?.cpf, `✖ Seu ${nomeCurto} foi reprovado pelo RH. Motivo: ${observacao || '—'}. Reenvie pelo portal.`)
+      if (alvo?.recrutador) notificar(alvo.recrutador, `✖ RH reprovou o ${nomeCurto} de ${alvo.nome} — candidato notificado para corrigir.`)
+    }
     setObsAberta(null)
     setObsTexto('')
   }

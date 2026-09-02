@@ -14,7 +14,7 @@ import {
 
 const ORDEM_PRIORIDADE = { reprovado: 0, andamento: 1, aprovado: 2 }
 
-export default function RecrutadorView({ db, setCandidatos, usuario }) {
+export default function RecrutadorView({ db, setCandidatos, usuario, notificar }) {
   const [modalAberto, setModalAberto] = useState(false)
   const [filtro, setFiltro] = useState('todos') // 'todos' | 'aprovado' | 'reprovado' | 'andamento'
   const [busca, setBusca] = useState('')
@@ -85,6 +85,7 @@ export default function RecrutadorView({ db, setCandidatos, usuario }) {
       documentos: {},
     }
     setCandidatos([...db.candidatos, candidato])
+    notificar('rh', `🧑‍💼 Novo candidato cadastrado por ${candidato.recrutador}: ${candidato.nome} (${candidato.funcao} · ${candidato.empresa}). Aguardando envio da documentação.`)
     setNome(''); setCpf(''); setTelefone(''); setMotociclista(false)
     setErro('')
     setModalAberto(false)

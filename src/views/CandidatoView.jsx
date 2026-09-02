@@ -76,7 +76,7 @@ function Stepper({ etapa, maxEtapa, irPara, docsObrigatoriosCompletos, bloqueada
   )
 }
 
-export default function CandidatoView({ db, cpf, atualizarCandidato }) {
+export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }) {
   const [digitado, setDigitado] = useState('')
   const [erro, setErro] = useState('')
   const [erroLocal, setErroLocal] = useState('')
@@ -132,6 +132,8 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
   }
 
   const statusDocs = statusDocumentos(candidato)
+  const avisosCandidato = (db.notificacoes || []).filter((n) => n.para === candidato.cpf)
+  const avisosNaoLidos = avisosCandidato.filter((n) => !n.lida)
   const faltantes = documentosFaltantes(candidato)
   const exigidos = docsPara(candidato)
   const arquivos = candidato.arquivos || []
@@ -276,6 +278,8 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
           },
         ],
       }))
+      notificar('rh', `📥 ${candidato.nome} enviou documento(s) para análise (${tagsSelecionadas.length} exigência(s)).`)
+      if (candidato.recrutador) notificar(candidato.recrutador, `📥 ${candidato.nome} enviou documento(s) ao portal.`)
       setUploadAberto(false)
       setArquivoPendente(null)
       setTagsSelecionadas([])
@@ -377,6 +381,31 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
           </div>
         </div>
       </section>
+
+      {/* ---------- Avisos do RH para o candidato ---------- */}
+      {avisosCandidato.length > 0 && (
+        <section className={`card text-left border ${avisosNaoLidos.length > 0 ? 'border-brand-300 bg-brand-50/40' : 'border-slate-200'}`}>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <h3 className="section-title !mb-0 flex items-center gap-2">
+              🔔 Avisos do RH
+              {avisosNaoLidos.length > 0 && (
+                <span className="badge bg-rose-50 text-rose-700 ring-1 ring-rose-200">{avisosNaoLidos.length} novo(s)</span>
+              )}
+            </h3>
+          </div>
+          <div className="space-y-1.5">
+            {avisosCandidato.slice(0, 5).map((n) => (
+              <div key={n.id} className={`flex items-start justify-between gap-3 rounded-lg px-3 py-2 text-sm ${n.lida ? 'bg-slate-50 text-slate-500' : 'bg-white border border-brand-100 text-slate-800 font-medium'}`}>
+                <span>{n.resumo}</span>
+                <span className="text-[11px] text-slate-400 shrink-0">{new Date(n.data).toLocaleString('pt-BR')}</span>
+              </div>
+            ))}
+          </div>
+          {avisosNaoLidos.length > 0 && (
+            <p className="text-[11px] text-slate-400 mt-2">Os avisos são gerados automaticamente quando o RH analisa seus documentos.</p>
+          )}
+        </section>
+      )}
 
       {/* ---------- Documentação enviada e em análise: sem etapas, sem edição ---------- */}
       {candidato.envioRH && !temReprovadoPosEnvio ? (
@@ -718,6 +747,8 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
                       aceiteSalarioFamilia: temDepPendentes ? true : undefined,
                     },
                   }))
+                  notificar('rh', `📤 ${candidato.nome} enviou a documentação completa ao RH para validação.`)
+                  if (candidato.recrutador) notificar(candidato.recrutador, `📤 ${candidato.nome} finalizou o envio da documentação ao RH.`)
                   setEnvioAberto(false)
                 }}
               >

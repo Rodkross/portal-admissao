@@ -37,6 +37,7 @@ function App() {
   const [perfil, setPerfil] = useState('recrutador')
   const [mHash] = useState(() => location.hash.match(/^#\/acesso\/(\d+)/))
   const [hashAtual, setHashAtual] = useState(location.hash)
+  const [sinoAberto, setSinoAberto] = useState(false)
 
   useEffect(() => {
     const onChange = () => setHashAtual(location.hash)
@@ -61,6 +62,25 @@ function App() {
   const setCandidatos = (lista) => atualizarDb((prev) => ({ ...prev, candidatos: lista }))
   const atualizarCandidato = (id, fn) =>
     atualizarDb((prev) => ({ ...prev, candidatos: prev.candidatos.map((c) => (c.id === id ? fn(c) : c)) }))
+
+  /** Cria uma notificação interna. `para`: 'rh', nome do recrutador ou CPF do candidato. */
+  const notificar = (para, resumo, tipo = 'info') =>
+    atualizarDb((prev) => ({
+      ...prev,
+      notificacoes: [
+        { id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, data: new Date().toISOString(), para, tipo, resumo, lida: false },
+        ...(prev.notificacoes || []),
+      ].slice(0, 200),
+    }))
+
+  const notificacoesDoUsuario = (usuario?.perfil === 'rh' ? 'rh' : usuario?.nome)
+  const minhasNotificacoes = (db.notificacoes || []).filter((n) => n.para === notificacoesDoUsuario)
+  const naoLidas = minhasNotificacoes.filter((n) => !n.lida).length
+  const marcarLidas = () =>
+    atualizarDb((prev) => ({
+      ...prev,
+      notificacoes: (prev.notificacoes || []).map((n) => (n.para === notificacoesDoUsuario ? { ...n, lida: true } : n)),
+    }))
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -88,6 +108,47 @@ function App() {
                   </button>
                 ))}
               </nav>
+
+              {/* Sino de notificações internas */}
+              <div className="relative">
+                <button
+                  onClick={() => setSinoAberto((v) => !v)}
+                  className="relative size-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-lg transition"
+                  title="Notificações"
+                >
+                  🔔
+                  {naoLidas > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+                      {naoLidas > 9 ? '9+' : naoLidas}
+                    </span>
+                  )}
+                </button>
+                {sinoAberto && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setSinoAberto(false)} />
+                    <div className="absolute right-0 mt-2 z-40 w-80 max-w-[90vw] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden text-slate-800">
+                      <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50">
+                        <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Notificações</span>
+                        {naoLidas > 0 && (
+                          <button onClick={marcarLidas} className="text-xs text-brand-600 font-semibold hover:underline">Marcar como lidas</button>
+                        )}
+                      </div>
+                      <div className="max-h-80 overflow-y-auto">
+                        {minhasNotificacoes.length === 0 ? (
+                          <p className="text-xs text-slate-400 text-center py-6">Nenhuma notificação por aqui.</p>
+                        ) : (
+                          minhasNotificacoes.slice(0, 30).map((n) => (
+                            <div key={n.id} className={`px-4 py-2.5 border-b border-slate-50 text-left ${n.lida ? '' : 'bg-brand-50/50'}`}>
+                              <p className="text-xs text-slate-700">{n.resumo}</p>
+                              <p className="text-[10px] text-slate-400 mt-0.5">{new Date(n.data).toLocaleString('pt-BR')}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
               <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-white/10">
                 <span className="size-8 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold">
                   {usuario.nome.charAt(0).toUpperCase()}
@@ -104,7 +165,7 @@ function App() {
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-8">
         {acessandoComoCandidato ? (
-          <CandidatoView db={db} cpf={cpfAtivo} atualizarCandidato={atualizarCandidato} />
+          <CandidatoView db={db} cpf={cpfAtivo} atualizarCandidato={atualizarCandidato} notificar={notificar} />
         ) : !usuario ? (
           <div className="max-w-sm mx-auto space-y-5">
             <div className="grid grid-cols-2 gap-2 bg-white rounded-xl border border-slate-200 p-1.5 shadow-[0_1px_2px_rgb(16_24_40/0.06)]">
@@ -115,9 +176,9 @@ function App() {
             <p className="text-center text-xs text-slate-500">É candidato? Use o link recebido por WhatsApp ou <br /> <a href="#/acesso/" className="text-brand-600 font-medium hover:underline">acesse pelo seu CPF</a>.</p>
           </div>
         ) : abaAtiva === 'recrutador' ? (
-          <RecrutadorView db={db} setCandidatos={setCandidatos} usuario={usuario} />
+          <RecrutadorView db={db} setCandidatos={setCandidatos} usuario={usuario} notificar={notificar} />
         ) : abaAtiva === 'rh' ? (
-          <RhView db={db} atualizarCandidato={atualizarCandidato} />
+          <RhView db={db} atualizarCandidato={atualizarCandidato} notificar={notificar} />
         ) : abaAtiva === 'cadastros' ? (
           <CadastrosView db={db} atualizarDb={atualizarDb} usuarioAtual={usuario} />
         ) : null}
