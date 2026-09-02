@@ -68,8 +68,8 @@ Usuário inicial (seed): **rh@empresa.com** / **admin123** (perfil RH). A sessã
         ├── LoginView.jsx       # Tela de login interno
         ├── RecrutadorView.jsx  # Cadastro de candidatos e convites via WhatsApp
         ├── CandidatoView.jsx   # Área pública do candidato (ficha + uploads)
-        ├── RhView.jsx          # Validação de documentos pelo RH
-        ├── UsuariosView.jsx    # Gestão de usuários internos
+        ├── RhView.jsx          # Painel de admissões e validação de documentos pelo RH
+        ├── CadastrosView.jsx   # Gestão centralizada de empresas, funções e usuários internos
         └── FichaCandidato.jsx  # Visualização da ficha do candidato
 ```
 

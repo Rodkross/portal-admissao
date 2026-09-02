@@ -170,12 +170,12 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
 
   return (
     <form onSubmit={salvar} className="card text-left space-y-4">
-      {/* Destaque: empresa de cadastro + recrutador responsável */}
+      {/* Destaque: função pretendida + recrutador responsável (empresa é restrita ao RH) */}
       <div className="rounded-xl border border-brand-200 bg-gradient-to-r from-brand-50 to-white p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-500">Empresa de cadastro</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-500">Função / Vaga</p>
           <p className="text-lg font-bold text-brand-700 truncate">
-            {candidato.contrato?.empresa || 'A definir pelo RH'}
+            {candidato.contrato?.funcao || candidato.funcao || 'A definir'}
           </p>
         </div>
         <div className="text-right">

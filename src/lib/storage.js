@@ -3,12 +3,37 @@
 
 const KEY = 'portal-admissao:v1'
 
+export const DEFAULT_EMPRESAS = [
+  'Logística & Entregas Brasil LTDA',
+  'Express Distribuidora S/A',
+  'Translog Soluções Urbanas',
+]
+
+export const DEFAULT_FUNCOES = [
+  'Motoboy / Entregador',
+  'Motorista Carreteiro',
+  'Auxiliar de Logística',
+  'Conferente de Carga',
+  'Atendente de Suporte',
+]
+
 export function loadDB() {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return JSON.parse(raw)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return {
+        candidatos: parsed.candidatos || [],
+        empresas: Array.isArray(parsed.empresas) && parsed.empresas.length > 0 ? parsed.empresas : DEFAULT_EMPRESAS,
+        funcoes: Array.isArray(parsed.funcoes) && parsed.funcoes.length > 0 ? parsed.funcoes : DEFAULT_FUNCOES,
+      }
+    }
   } catch { /* ignore */ }
-  return { candidatos: [] }
+  return {
+    candidatos: [],
+    empresas: DEFAULT_EMPRESAS,
+    funcoes: DEFAULT_FUNCOES,
+  }
 }
 
 export function saveDB(db) {

@@ -4,14 +4,14 @@ import { sessaoSalva, logout } from './lib/auth'
 import RecrutadorView from './views/RecrutadorView'
 import CandidatoView from './views/CandidatoView'
 import RhView from './views/RhView'
-import UsuariosView from './views/UsuariosView'
+import CadastrosView from './views/CadastrosView'
 import LoginView from './views/LoginView'
 
 // Abas internas (protegidas por login) e aba pública do candidato.
 const ABAS_INTERNAS = [
   { id: 'recrutador', label: 'Recrutador', emoji: '🧑\u200d💼', perfis: ['recrutador'] },
-  { id: 'rh', label: 'Validação', emoji: '✅', perfis: ['rh'] },
-  { id: 'usuarios', label: 'Usuários', emoji: '👥', perfis: ['rh'] },
+  { id: 'rh', label: 'Admissões & Validação', emoji: '📋', perfis: ['rh'] },
+  { id: 'cadastros', label: 'Cadastros', emoji: '🏢', perfis: ['rh'] },
 ]
 
 // Migração: candidatos antigos foram gravados com recrutador fixo 'Recrutador'.
@@ -118,8 +118,8 @@ function App() {
           <RecrutadorView db={db} setCandidatos={setCandidatos} usuario={usuario} />
         ) : abaAtiva === 'rh' ? (
           <RhView db={db} atualizarCandidato={atualizarCandidato} />
-        ) : abaAtiva === 'usuarios' ? (
-          <UsuariosView usuarioAtual={usuario} />
+        ) : abaAtiva === 'cadastros' ? (
+          <CadastrosView db={db} atualizarDb={atualizarDb} usuarioAtual={usuario} />
         ) : null}
       </main>
 
