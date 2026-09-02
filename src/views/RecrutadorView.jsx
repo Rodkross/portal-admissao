@@ -58,13 +58,14 @@ export default function RecrutadorView({ db, setCandidatos, usuario }) {
     if (!funcao.trim() && funcoesDisponiveis.length > 0) return setErro('Selecione a função.')
     if (db.candidatos.some((c) => c.cpf === d)) return setErro('Já existe um candidato com este CPF.')
 
-    const empresaFinal = empresa.trim() || empresasDisponiveis[0] || 'Empresa Geral'
-    const funcaoFinal = funcao.trim() || funcoesDisponiveis[0] || 'Geral'
+    const up = (s) => (s || '').trim().toUpperCase()
+    const empresaFinal = up(empresa) || empresasDisponiveis[0] || 'Empresa Geral'
+    const funcaoFinal = up(funcao) || funcoesDisponiveis[0] || 'Geral'
     const ehMoto = isMotociclista({ funcao: funcaoFinal, motociclista })
 
     const candidato = {
       id: newId('cand'),
-      nome: nome.trim(),
+      nome: up(nome),
       cpf: d,
       telefone: onlyDigits(telefone),
       sexo,

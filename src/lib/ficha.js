@@ -55,7 +55,23 @@ export function fichaLinhas(c) {
   return linhas.map(([k, v]) => [k, v || '—'])
 }
 
-export function gerarFichaPDF(candidato) {
+/** Converte um dataUrl de imagem (ex.: webp) para JPEG via canvas, formato que o jsPDF embute. */
+function converterParaJpeg(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      canvas.getContext('2d').drawImage(img, 0, 0)
+      resolve(canvas.toDataURL('image/jpeg', 0.92))
+    }
+    img.onerror = reject
+    img.src = dataUrl
+  })
+}
+
+export async function gerarFichaPDF(candidato) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const W = 210
   const M = 18
@@ -92,59 +108,9 @@ export function gerarFichaPDF(candidato) {
     y += alturaBloco
   }
 
-  doc.setTextColor(30)
-  doc.setFontSize(11)
-  doc.setFont('helvetica', 'bold')
-  doc.text('Documentação Enviada', M, y)
-  y += 6
-
-  // Resumo por informação exigida (resolvida via arquivos com tags)
+  // Resumo consolidado da documentação
   const status = statusDocumentos(candidato)
-  doc.setFontSize(9.5)
-  for (const s of status) {
-    const envio = s.arquivo
-    if (y > 250) { doc.addPage(); y = 22 }
-
-    // pré-calcula as linhas para dimensionar o card dinamicamente
-    const nomeDoc = doc.splitTextToSize(s.nome, W - M * 2 - 45)
-    const temObs = !!envio?.observacao
-    const linhasObs = temObs ? doc.splitTextToSize(`Observação do RH: ${envio.observacao}`, W - M * 2 - 8) : []
-    const alturaCard = 10 + (nomeDoc.length - 1) * 4.5 + (envio ? 4.5 : 0) + (temObs ? 4 + linhasObs.length * 4 : 0)
-
-    // borda do card
-    doc.setDrawColor(200)
-    doc.roundedRect(M, y - 4.5, W - M * 2, alturaCard, 1.5, 1.5)
-    doc.setTextColor(30)
-    doc.setFont('helvetica', 'bold')
-    doc.text(nomeDoc, M + 3, y + 0.5)
-    const cor = !envio ? [160, 160, 160] : s.status === 'aprovado' ? [22, 130, 60] : s.status === 'reprovado' ? [190, 40, 40] : [180, 130, 0]
-    doc.setTextColor(...cor)
-    doc.text(envio ? statusLabel[s.status] : 'NÃO ENVIADO', W - M - 3, y + 0.5, { align: 'right' })
-    let yInterno = y + 0.5 + (nomeDoc.length - 1) * 4.5
-    if (envio) {
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8)
-      doc.setTextColor(120)
-      yInterno += 4.5
-      const linhaOrigem = doc.splitTextToSize(`Via: ${s.preenchidoPor} · enviado em ${new Date(s.enviadoEm).toLocaleString('pt-BR')}`, W - M * 2 - 6)
-      doc.text(linhaOrigem, M + 3, yInterno)
-      doc.setFontSize(9.5)
-    }
-    if (temObs) {
-      y += 6 + (nomeDoc.length - 1) * 4.5 + 4.5
-      if (y > 255) { doc.addPage(); y = 22 }
-      doc.setFont('helvetica', 'italic')
-      doc.setFontSize(8.5)
-      doc.setTextColor(190, 40, 40)
-      doc.text(linhasObs, M + 6, y)
-      y += linhasObs.length * 4
-      doc.setFontSize(9.5)
-    }
-    y += alturaCard + 1
-  }
-
   if (y > 235) { doc.addPage(); y = 22 }
-  y += 4
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
   doc.setTextColor(30)
@@ -182,29 +148,35 @@ export function gerarFichaPDF(candidato) {
     for (const arq of arquivos) {
       // rótulo do arquivo
       if (y > 265) { doc.addPage(); y = 22 }
+      // (await permitido: gerarFichaPDF é async)
       const nomesTags = (arq.tags || []).map((id) => docsPara(candidato).find((t) => t.id === id)?.nome || id).join(', ')
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(9.5)
       doc.setTextColor(30)
-      const rotulo = doc.splitTextToSize(arq.nomeArquivo, larguraUtil - 30)
+      const rotulo = doc.splitTextToSize(nomesTags || 'Documento', larguraUtil - 30)
       doc.text(rotulo, M, y)
       doc.setTextColor(...(arq.status === 'aprovado' ? [22, 130, 60] : arq.status === 'reprovado' ? [190, 40, 40] : [180, 130, 0]))
       doc.text(statusLabel[arq.status] || arq.status, W - M, y, { align: 'right' })
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(8)
       doc.setTextColor(120)
-      doc.text(doc.splitTextToSize(`Comprova: ${nomesTags || '—'} · enviado em ${new Date(arq.enviadoEm).toLocaleString('pt-BR')}`, larguraUtil), M, y + 4)
+      doc.text(doc.splitTextToSize(`Enviado em ${new Date(arq.enviadoEm).toLocaleString('pt-BR')}`, larguraUtil), M, y + 4)
       y += 10
 
-      // embute imagem (JPEG/PNG) direto no PDF
-      const ehImagem = arq.dataUrl && /^data:image\/(jpeg|jpg|png)/i.test(arq.dataUrl)
+      // embute imagem (qualquer image/*) direto no PDF
+      const ehImagem = arq.dataUrl && /^data:image\//i.test(arq.dataUrl)
       if (ehImagem) {
         try {
-          const props = doc.getImageProperties(arq.dataUrl)
+          // jsPDF só embute PNG/JPEG nativamente; converte outros formatos (webp etc.) via canvas
+          let data = arq.dataUrl
+          if (!/^data:image\/(jpeg|jpg|png);/i.test(data)) {
+            data = await converterParaJpeg(data)
+          }
+          const props = doc.getImageProperties(data)
           const alturaImg = Math.min((props.height / props.width) * larguraUtil, 160)
           const larguraImg = (props.width / props.height) * alturaImg
           if (y + alturaImg > 280) { doc.addPage(); y = 22 }
-          doc.addImage(arq.dataUrl, props.fileType === 'PNG' ? 'PNG' : 'JPEG', M + (larguraUtil - larguraImg) / 2, y, larguraImg, alturaImg)
+          doc.addImage(data, props.fileType === 'PNG' ? 'PNG' : 'JPEG', M + (larguraUtil - larguraImg) / 2, y, larguraImg, alturaImg)
           y += alturaImg + 10
         } catch {
           doc.setTextColor(190, 40, 40)

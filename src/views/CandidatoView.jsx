@@ -4,20 +4,42 @@ import FichaCandidato from './FichaCandidato'
 
 const MAX_MB = 5
 
+/** Reduz/comprime uma imagem grande via canvas para caber no localStorage. */
+function comprimirImagem(file, maxLado = 1600, qualidade = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const escala = Math.min(1, maxLado / Math.max(img.naturalWidth, img.naturalHeight))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(img.naturalWidth * escala)
+        canvas.height = Math.round(img.naturalHeight * escala)
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', qualidade))
+      }
+      img.onerror = () => reject(new Error('imagem ilegível'))
+      img.src = String(reader.result)
+    }
+    reader.onerror = () => reject(new Error('falha ao ler arquivo'))
+    reader.readAsDataURL(file)
+  })
+}
+
 const ETAPAS = [
   { n: 1, titulo: 'Dados pessoais', desc: 'Complete sua ficha' },
   { n: 2, titulo: 'Documentos', desc: 'Envie as digitalizações' },
   { n: 3, titulo: 'Revisão e envio', desc: 'Confirme para o RH' },
 ]
 
-function Stepper({ etapa, maxEtapa, irPara, docsObrigatoriosCompletos }) {
+function Stepper({ etapa, maxEtapa, irPara, docsObrigatoriosCompletos, bloqueadaNa3 }) {
   return (
     <div className="card text-left">
       <div className="flex items-center">
         {ETAPAS.map((e, i) => {
           const concluida = e.n < etapa
           const atual = e.n === etapa
-          const acessivel = e.n === 3 ? (maxEtapa >= 3 && docsObrigatoriosCompletos) : e.n <= maxEtapa
+          const acessivel = e.n === 3 ? (maxEtapa >= 3 && docsObrigatoriosCompletos && !bloqueadaNa3) : e.n <= maxEtapa
             return (
               <div key={e.n} className={`flex items-center ${i < ETAPAS.length - 1 ? 'flex-1' : ''}`}>
                 <button
@@ -133,6 +155,11 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
   const enviados = statusDocs.filter((d) => d.arquivo).length
   const progresso = exigidos.length ? Math.round((enviados / exigidos.length) * 100) : 0
 
+  // Se o RH reprovar algum documento após o envio, o painel volta automaticamente para a etapa de documentos
+  const temReprovadoPosEnvio = !!candidato.envioRH && reprovados > 0
+  const etapaEfetiva = temReprovadoPosEnvio ? 2 : etapa
+  const podeReenviar = temReprovadoPosEnvio
+
   function abrirUpload(e) {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -156,6 +183,7 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
     setErroLocal('')
     setUploadAberto(true)
   }
+  void abrirCorrecao // (botão removido: o retorno à etapa 2 é automático quando o RH reprova)
 
   function fecharModal() {
     setUploadAberto(false)
@@ -185,7 +213,7 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
     fecharModal()
   }
 
-  function salvarEdicao() {
+  async function salvarEdicao() {
     if (!tagsSelecionadas.length) return setErroLocal('Selecione pelo menos uma informação que este documento comprova.')
     const alvo = editando
     const substituto = arquivoPendente // File novo, se trocado
@@ -210,18 +238,24 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
       }))
       fecharModal()
     }
-    if (substituto && substituto.size > 1.5 * 1024 * 1024) {
-      aplicar(null) // arquivos grandes: só metadados (demo com localStorage)
-    } else if (substituto) {
-      const reader = new FileReader()
-      reader.onload = () => aplicar(String(reader.result))
-      reader.readAsDataURL(substituto)
-    } else {
-      aplicar()
+    try {
+      if (substituto && substituto.size > 1.5 * 1024 * 1024 && substituto.type.startsWith('image/')) {
+        aplicar(await comprimirImagem(substituto))
+      } else if (substituto && substituto.size > 1.5 * 1024 * 1024) {
+        aplicar(null) // arquivos grandes não-imagem: só metadados (demo com localStorage)
+      } else if (substituto) {
+        const reader = new FileReader()
+        reader.onload = () => aplicar(String(reader.result))
+        reader.readAsDataURL(substituto)
+      } else {
+        aplicar()
+      }
+    } catch {
+      aplicar(null)
     }
   }
 
-  function confirmarUpload() {
+  async function confirmarUpload() {
     if (!tagsSelecionadas.length) return setErroLocal('Selecione pelo menos uma informação que este documento comprova.')
     const file = arquivoPendente
     const salvar = (dataUrl) => {
@@ -247,12 +281,19 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
       setTagsSelecionadas([])
       setErroLocal('')
     }
-    if (file.size > 1.5 * 1024 * 1024) {
-      salvar(null) // arquivos grandes: só metadados (demo com localStorage)
-    } else {
-      const reader = new FileReader()
-      reader.onload = () => salvar(String(reader.result))
-      reader.readAsDataURL(file)
+    try {
+      if (file.size > 1.5 * 1024 * 1024 && file.type.startsWith('image/')) {
+        // imagens grandes: comprime via canvas para poderem ser embutidas no PDF
+        salvar(await comprimirImagem(file))
+      } else if (file.size > 1.5 * 1024 * 1024) {
+        salvar(null) // arquivos grandes não-imagem: só metadados (demo com localStorage)
+      } else {
+        const reader = new FileReader()
+        reader.onload = () => salvar(String(reader.result))
+        reader.readAsDataURL(file)
+      }
+    } catch {
+      salvar(null)
     }
   }
 
@@ -337,12 +378,27 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
         </div>
       </section>
 
-      <Stepper etapa={etapa} maxEtapa={maxEtapa} irPara={irPara} docsObrigatoriosCompletos={docsObrigatoriosCompletos} />
+      {/* ---------- Documentação enviada e em análise: sem etapas, sem edição ---------- */}
+      {candidato.envioRH && !temReprovadoPosEnvio ? (
+        <section className="card text-center py-10">
+          <div className="size-16 mx-auto rounded-full bg-emerald-50 ring-1 ring-emerald-200 flex items-center justify-center text-3xl mb-4">📨</div>
+          <h2 className="text-xl font-bold text-slate-900">Documentação enviada com sucesso!</h2>
+          <p className="text-sm text-slate-600 mt-2 max-w-md mx-auto leading-relaxed">
+            Obrigado! O nosso RH está fazendo a <strong>validação dos seus dados e da documentação enviada</strong>.
+            Assim que a análise for concluída, nós entraremos em contato com você. 🍀
+          </p>
+          <p className="text-xs text-slate-400 mt-5">
+            Enviado ao RH em {new Date(candidato.envioRH.em).toLocaleString('pt-BR')}
+          </p>
+        </section>
+      ) : (
+        <>
+      <Stepper etapa={etapaEfetiva} maxEtapa={maxEtapa} irPara={irPara} docsObrigatoriosCompletos={docsObrigatoriosCompletos} bloqueadaNa3={temReprovadoPosEnvio} />
 
-      {erroLocal && etapa === 2 && <p className="alert-error">{erroLocal}</p>}
+      {erroLocal && etapaEfetiva === 2 && <p className="alert-error">{erroLocal}</p>}
 
       {/* ---------- ETAPA 1: ficha de dados pessoais ---------- */}
-      {etapa === 1 && (
+      {etapaEfetiva === 1 && (
         <>
           <FichaCandidato key={candidato.id} candidato={candidato} atualizarCandidato={atualizarCandidato} onSalvo={() => irPara(2)} />
           <div className="flex justify-end">
@@ -359,10 +415,20 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
       )}
 
       {/* ---------- ETAPA 2: documentos ---------- */}
-      {etapa === 2 && (
+      {etapaEfetiva === 2 && (
         <>
       {/* Validações — resumo compacto acima do envio */}
       <section className="text-left">
+        {temReprovadoPosEnvio && (
+          <div className="p-3.5 mb-3 bg-rose-50 border border-rose-300 rounded-xl text-sm text-rose-900">
+            <p className="font-bold">⚠️ O RH reprovou {reprovados} documento(s). Reenvie a versão corrigida e envie novamente.</p>
+            {reprovados > 0 && (
+              <p className="mt-1 text-xs text-rose-800">
+                Reprovados: {statusDocs.filter((d) => d.status === 'reprovado').map((d) => d.nome + (d.observacao ? ` (${d.observacao})` : '')).join(', ')}
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex items-center justify-between px-1 mb-1.5">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Validação da documentação</h3>
           {faltantes.length > 0 && (
@@ -468,21 +534,13 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
             {arquivos.map((a) => (
               <div key={a.id} className="card-sm flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-800 truncate">{a.nomeArquivo}</p>
-                  <p className="text-xs text-slate-500 truncate">Comprova: {tagsDoArquivo(a).join(', ')}</p>
+                  <p className="text-sm font-medium text-slate-800 truncate">{tagsDoArquivo(a).join(', ') || 'Documento'}</p>
+                  <p className="text-xs text-slate-500 truncate">{a.status === 'aprovado' ? 'Validado pelo RH' : a.status === 'reprovado' ? 'Aguardando correção' : 'Em análise pelo RH'}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className={`badge ${a.status === 'aprovado' ? 'badge-ok' : a.status === 'reprovado' ? 'badge-bad' : 'badge-warn'}`}>
                     {a.status === 'aprovado' ? '✔ OK' : a.status === 'reprovado' ? '✖ Reprovado' : '⏳ Em análise'}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => abrirCorrecao(a)}
-                    title="Editar tags, trocar arquivo ou excluir"
-                    className="text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline cursor-pointer"
-                  >
-                    Corrigir
-                  </button>
                 </div>
               </div>
             ))}
@@ -517,11 +575,18 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
       )}
 
       {/* ---------- ETAPA 3: revisão e envio ao RH ---------- */}
-      {etapa === 3 && (
+      {etapaEfetiva === 3 && (
         <>
       {/* Rodapé */}
       <section className="card">
-        {faltantes.length === 0 ? (
+        {candidato.envioRH ? (
+          <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-xl text-left">
+            <p className="font-bold text-emerald-900 text-sm">✅ Documentação enviada com sucesso!</p>
+            <p className="text-emerald-800 text-sm mt-1">
+              Aguarde a análise do RH — nós entraremos em contato!
+            </p>
+          </div>
+        ) : faltantes.length === 0 ? (
           <p className="alert-success">✅ Toda a documentação está completa e pronta para envio ao RH!</p>
         ) : docsObrigatoriosCompletos && temDepPendentes ? (
           <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-left space-y-1.5 text-xs text-amber-900">
@@ -538,6 +603,14 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
             Ainda falta(m) <strong>{faltantes.length}</strong> documento(s) obrigatório(s): {faltantes.map((f) => f.nome).join(', ')}.
           </p>
         )}
+        {temReprovadoPosEnvio && (
+          <div className="p-3.5 bg-rose-50 border border-rose-300 rounded-xl text-left text-sm text-rose-900">
+            <p className="font-bold">⚠️ A análise do RH apontou pendências na sua documentação.</p>
+            <p className="mt-1">
+              Corrija os documentos marcados como <strong>reprovados</strong> na etapa de documentos e reenvie. Veja a observação do RH ao tocar em cada item.
+            </p>
+          </div>
+        )}
         <button
           onClick={() => {
             setAceiteLgpd(false)
@@ -546,14 +619,16 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
             setEnvioAberto(true)
           }}
           className="btn-primary mt-3"
-          disabled={!docsObrigatoriosCompletos || arquivos.length === 0 || !candidato.ficha?.atualizadoEm}
+          disabled={(!!candidato.envioRH && !podeReenviar) || !docsObrigatoriosCompletos || arquivos.length === 0 || !candidato.ficha?.atualizadoEm}
           title={
-            !docsObrigatoriosCompletos
-              ? `Anexe todos os documentos obrigatórios antes de enviar (falta: ${faltantesTitular.map((f) => f.nome).join(', ')})`
-              : ''
-          }
+            candidato.envioRH && !podeReenviar
+              ? 'Documentação já enviada ao RH — aguarde a análise.'
+              : !docsObrigatoriosCompletos
+                ? `Anexe todos os documentos obrigatórios antes de enviar (falta: ${faltantesTitular.map((f) => f.nome).join(', ')})`
+                : ''
+            }
         >
-          📤 Enviar documentação ao RH
+          {candidato.envioRH && podeReenviar ? '📤 Reenviar documentação ao RH' : candidato.envioRH ? '✔ Documentação já enviada' : '📤 Enviar documentação ao RH'}
         </button>
         {!candidato.ficha?.atualizadoEm && (
           <p className="text-xs text-amber-700 mt-2">Preencha e salve sua ficha de dados pessoais antes de enviar ao RH.</p>
@@ -651,6 +726,8 @@ export default function CandidatoView({ db, cpf, atualizarCandidato }) {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   )

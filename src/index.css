@@ -85,6 +85,25 @@ body {
   @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-4 focus:ring-brand-500/15 focus:border-brand-500;
 }
 
+/* Preenchimento em caixa alta; e-mail sempre em caixa baixa (senha fica como digitada) */
+.input {
+  text-transform: uppercase;
+}
+
+.input::placeholder {
+  text-transform: none;
+}
+
+input[type='email'].input,
+input[type='password'].input,
+select.input {
+  text-transform: none;
+}
+
+input[type='email'].input {
+  text-transform: lowercase;
+}
+
 @utility badge {
   @apply inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full;
 }

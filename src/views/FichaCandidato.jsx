@@ -152,14 +152,32 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
     if (motociclista && !f.cnhNumero.trim()) return setErro('Informe o número da CNH (motociclista).')
     if (motociclista && !f.cnhCategoria) return setErro('Informe a categoria da CNH.')
     setErro('')
+    const up = (s) => (s || '').trim().toUpperCase()
     atualizarCandidato(candidato.id, (c) => ({
       ...c,
-      nome: f.nome.trim(),
+      nome: up(f.nome),
       telefone: onlyDigits(f.telefone),
       ficha: {
         ...f,
-        nome: f.nome.trim(),
-        dependentes: f.temFilhos ? f.dependentes.map((d) => ({ ...d, nome: d.nome.trim() })) : [],
+        nome: up(f.nome),
+        logradouro: up(f.logradouro),
+        numero: up(f.numero),
+        complemento: up(f.complemento),
+        bairro: up(f.bairro),
+        cidade: up(f.cidade),
+        rg: up(f.rg),
+        rgOrgao: up(f.rgOrgao),
+        ctpsNumero: up(f.ctpsNumero),
+        ctpsSerie: up(f.ctpsSerie),
+        tituloEleitor: up(f.tituloEleitor),
+        pis: up(f.pis),
+        chavePix: up(f.chavePix),
+        banco: up(f.banco),
+        cnhNumero: up(f.cnhNumero),
+        reservista: up(f.reservista),
+        dependentes: f.temFilhos
+          ? f.dependentes.map((d) => ({ ...d, nome: up(d.nome) }))
+          : [],
         atualizadoEm: new Date().toISOString(),
       },
     }))

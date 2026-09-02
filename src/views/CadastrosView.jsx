@@ -87,7 +87,7 @@ export default function CadastrosView({ db, atualizarDb, usuarioAtual }) {
     if (!/^\S+@\S+\.\S+$/.test(emailUsuario)) return setMsgUsuario({ tipo: 'erro', texto: 'E-mail inválido.' })
     if (senhaUsuario.length < 6) return setMsgUsuario({ tipo: 'erro', texto: 'A senha deve ter ao menos 6 caracteres.' })
 
-    const r = criarUsuario({ nome: nomeUsuario, email: emailUsuario, senha: senhaUsuario, perfil: perfilUsuario }, usuarioAtual)
+    const r = criarUsuario({ nome: nomeUsuario.trim().toUpperCase(), email: emailUsuario.trim().toLowerCase(), senha: senhaUsuario, perfil: perfilUsuario }, usuarioAtual)
     if (!r.ok) return setMsgUsuario({ tipo: 'erro', texto: r.erro })
 
     setNomeUsuario('')
