@@ -245,6 +245,28 @@ function ArquivoPreview({ arquivo, nomeTagPorId }) {
   )
 }
 
+/**
+ * Arquivos 'ativos' para análise: um arquivo está ativo se cobre pelo menos uma
+ * exigência que nenhum arquivo MAIS RECENTE também cobre. Reenvios tornam os
+ * arquivos anteriores obsoletos (saem da lista de análise e vão pro histórico).
+ */
+function arquivosAtivos(cand) {
+  const ordenados = [...(cand.arquivos || [])].sort((a, b) => new Date(b.enviadoEm) - new Date(a.enviadoEm))
+  const cobertos = new Set()
+  const ativos = []
+  for (const arq of ordenados) {
+    const tags = arq.tags || []
+    const temTagViva = tags.some((t) => !cobertos.has(t))
+    if (temTagViva) {
+      ativos.push(arq)
+      tags.forEach((t) => cobertos.add(t))
+    }
+  }
+  return ativos
+}
+
+const ORDEM_PRIORIDADE = { doc_enviada: 0, reprovado: 1, andamento: 2, aprovado: 3 }
+
 export default function RhView({ db, atualizarCandidato }) {
   const [selecionado, setSelecionado] = useState(null)
   const [filtro, setFiltro] = useState('todos') // 'todos' | 'aprovado' | 'reprovado' | 'andamento'
@@ -290,6 +312,7 @@ export default function RhView({ db, atualizarCandidato }) {
   const candidatosExibidos = todosCandidatos
     .slice()
     .reverse()
+    .sort((a, b) => (ORDEM_PRIORIDADE[getStatusCandidato(a)] ?? 9) - (ORDEM_PRIORIDADE[getStatusCandidato(b)] ?? 9))
     .filter((c) => {
       if (filtro !== 'todos' && getStatusCandidato(c) !== filtro) return false
       if (busca.trim()) {
@@ -331,6 +354,14 @@ export default function RhView({ db, atualizarCandidato }) {
       'reprovado',
       obsTexto.trim(),
     )
+  }
+
+  /** Registra uma comunicação (WhatsApp) no histórico do candidato. */
+  function registrarComunicacao(candAlvo, tipo, resumo) {
+    atualizarCandidato(candAlvo.id, (c) => ({
+      ...c,
+      comunicacoes: [...(c.comunicacoes || []), { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, data: new Date().toISOString(), tipo, resumo }],
+    }))
   }
 
   function msgExigencias(c) {
@@ -603,7 +634,13 @@ export default function RhView({ db, atualizarCandidato }) {
               </p>
             </div>
             <div className="flex flex-wrap gap-2 shrink-0">
-              <a href={waLink(cand.telefone, msgExigencias(cand))} target="_blank" rel="noreferrer" className="btn-wa btn-sm">
+              <a
+                href={waLink(cand.telefone, msgExigencias(cand))}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => registrarComunicacao(cand, 'whatsapp', `Exigências enviadas por WhatsApp para ${maskPhone(cand.telefone)}`)}
+                className="btn-wa btn-sm"
+              >
                 📲 Disparar exigências no WhatsApp
               </a>
               <button onClick={() => gerarFichaPDF(cand)} className="btn-outline btn-sm">
@@ -646,16 +683,17 @@ export default function RhView({ db, atualizarCandidato }) {
             <ContratoForm key={cand.id} cand={cand} db={db} atualizarCandidato={atualizarCandidato} />
           </div>
 
-          {/* Validação por ARQUIVO enviado (um arquivo pode cobrir vários docs) — aprovados saem da lista */}
-          <h3 className="section-title px-1 mb-2">Arquivos enviados ({(cand.arquivos || []).length})</h3>
+          {/* Validação por ARQUIVO enviado (um arquivo pode cobrir vários docs) — aprovados e substituídos saem da lista */}
+          <h3 className="section-title px-1 mb-2">Arquivos para análise ({arquivosAtivos(cand).filter((a) => a.status !== 'aprovado').length})</h3>
+          <p className="text-[11px] text-slate-400 px-1 mb-2">💡 Apenas a versão mais recente de cada documento aparece aqui. Reenvios antigos e aprovados ficam no histórico no fim da página.</p>
           <div className="space-y-3 mb-6">
             {(() => {
-              const pendentes = (cand.arquivos || []).filter((a) => a.status !== 'aprovado')
+              const ativosPendentes = arquivosAtivos(cand).filter((a) => a.status !== 'aprovado')
               if ((cand.arquivos || []).length === 0) return <p className="text-sm text-slate-400">Nenhum arquivo enviado ainda.</p>
-              if (pendentes.length === 0) return <p className="text-sm text-emerald-700">✅ Todos os arquivos enviados já foram aprovados — veja a situação no resumo abaixo.</p>
+              if (ativosPendentes.length === 0) return <p className="text-sm text-emerald-700">✅ Tudo analisado — nenhum arquivo aguardando decisão. Veja o histórico no fim da página.</p>
               return null
             })()}
-            {[...(cand.arquivos || [])].filter((a) => a.status !== 'aprovado').reverse().map((a) => {
+            {arquivosAtivos(cand).filter((a) => a.status !== 'aprovado').map((a) => {
               const nomesTags = (a.tags || []).map((id) => docsPara(cand).find((t) => t.id === id)?.nome || id)
               return (
                 <div key={a.id} className="card-sm">
@@ -731,6 +769,49 @@ export default function RhView({ db, atualizarCandidato }) {
                 </span>
               </div>
             ))}
+          </div>
+
+          {/* Histórico reduzido — envios, aprovações, rejeições e comunicações */}
+          <h3 className="section-title px-1 mt-8 mb-2">Histórico do processo</h3>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="card-sm">
+              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">📤 Envios do candidato</p>
+              {[...(cand.arquivos || [])].sort((a, b) => new Date(b.enviadoEm) - new Date(a.enviadoEm)).map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-2 border-b border-slate-100 py-1.5 text-xs">
+                  <span className="text-slate-700 truncate">{(a.tags || []).map((id) => docsPara(cand).find((t) => t.id === id)?.nome || id).join(', ') || a.nomeArquivo}</span>
+                  <span className="text-slate-400 shrink-0">{new Date(a.enviadoEm).toLocaleDateString('pt-BR')}</span>
+                </div>
+              ))}
+              {(cand.arquivos || []).length === 0 && <p className="text-xs text-slate-400">Nenhum envio registrado.</p>}
+            </div>
+            <div className="card-sm">
+              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">⚖️ Aprovações e rejeições</p>
+              {[...(cand.arquivos || [])]
+                .filter((a) => a.status === 'aprovado' || a.status === 'reprovado')
+                .sort((a, b) => new Date(b.enviadoEm) - new Date(a.enviadoEm))
+                .map((a) => (
+                  <div key={a.id} className="border-b border-slate-100 py-1.5 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-700 truncate">{(a.tags || []).map((id) => docsPara(cand).find((t) => t.id === id)?.nome || id).join(', ')}</span>
+                      <span className={`shrink-0 font-semibold ${a.status === 'aprovado' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {a.status === 'aprovado' ? '✔ Aprovado' : '✖ Rejeitado'}
+                      </span>
+                    </div>
+                    {a.status === 'reprovado' && a.observacao && <p className="text-slate-400 mt-0.5">Obs.: {a.observacao}</p>}
+                  </div>
+                ))}
+              {(cand.arquivos || []).every((a) => a.status === 'pendente') && <p className="text-xs text-slate-400">Nenhuma decisão registrada ainda.</p>}
+            </div>
+            <div className="card-sm sm:col-span-2">
+              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">📲 Comunicações com o candidato</p>
+              {[...(cand.comunicacoes || [])].reverse().map((com) => (
+                <div key={com.id} className="flex items-center justify-between gap-2 border-b border-slate-100 py-1.5 text-xs">
+                  <span className="text-slate-700 truncate">{com.resumo}</span>
+                  <span className="text-slate-400 shrink-0">{new Date(com.data).toLocaleString('pt-BR')}</span>
+                </div>
+              ))}
+              {(cand.comunicacoes || []).length === 0 && <p className="text-xs text-slate-400">Nenhuma comunicação registrada. Ao enviar mensagens pelo WhatsApp aqui no portal, elas ficam registradas automaticamente.</p>}
+            </div>
           </div>
           </div>
         </section>

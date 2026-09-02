@@ -10,6 +10,10 @@ Aplicação web para documentação de novos colaboradores: recrutadores cadastr
 
 - **Recrutador** — cadastro de candidatos (com validação de CPF, máscaras de telefone/CEP), geração de link de acesso por CPF e envio do convite por WhatsApp.
 - **Validação (RH)** — revisão dos documentos enviados por cada candidato, com aprovação/reprovação e observações. Documentos reprovados liberam novo envio pelo candidato.
+  - **Somente a versão mais recente de cada documento entra na fila de análise** — reenvios substituem automaticamente os arquivos anteriores (reprovados ou não), que saem da tela e passam a constar apenas no histórico.
+  - **Ordenação por prioridade**: candidatos com documentação enviada aguardando aprovação aparecem no topo, seguidos dos com exigência/pendência; aprovados por último.
+  - **Histórico do processo** no modal do candidato: todos os envios, aprovações/rejeições (com observações) e comunicações registradas com o candidato.
+  - As mensagens de exigências disparadas por WhatsApp a partir do portal são **registradas automaticamente no histórico de comunicações**.
 - **Usuários (RH)** — criação e remoção de usuários internos com perfil `rh` ou `recrutador`.
 
 ### Área do candidato (pública, via link `#/acesso/<CPF>`)
@@ -33,7 +37,7 @@ O RH pode baixar a **Ficha de Admissão** em PDF (via `jsPDF`), contendo todos o
 | Perfil | Acesso |
 |---|---|
 | `recrutador` | Aba Recrutador (cadastro e convites) |
-| `rh` | Abas Validação e Usuários |
+| `rh` | Abas Validação e Cadastros |
 
 Usuário inicial (seed): **rh@empresa.com** / **admin123** (perfil RH). A sessão dura enquanto a aba do navegador estiver aberta (`sessionStorage`).
 
@@ -99,8 +103,9 @@ npm run preview
 
 ## Modelo de dados (resumo)
 
-- `candidato`: `{ id, nome, cpf, telefone, sexo, motociclista, recrutador, ficha: {..., temFilhos, dependentes: [{ id, nome, dataNascimento }] }, contrato: {...}, arquivos: [...] }`
+- `candidato`: `{ id, nome, cpf, telefone, sexo, motociclista, recrutador, ficha: {..., temFilhos, dependentes: [{ id, nome, dataNascimento }] }, contrato: {...}, arquivos: [...], comunicacoes: [...] }`
 - `arquivo`: `{ id, nomeArquivo, tipo, tamanho, dataUrl, tags: [docId], status, observacao, enviadoEm }`
+- `comunicacao`: `{ id, data, tipo: 'whatsapp', resumo }`
 - `usuário`: `{ id, nome, email, senha, perfil: 'rh'|'recrutador', criadoEm }`
 
 Chaves de armazenamento no navegador:

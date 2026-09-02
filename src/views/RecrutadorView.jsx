@@ -12,6 +12,8 @@ import {
   isMotociclista,
 } from '../lib/storage'
 
+const ORDEM_PRIORIDADE = { reprovado: 0, andamento: 1, aprovado: 2 }
+
 export default function RecrutadorView({ db, setCandidatos, usuario }) {
   const [modalAberto, setModalAberto] = useState(false)
   const [filtro, setFiltro] = useState('todos') // 'todos' | 'aprovado' | 'reprovado' | 'andamento'
@@ -126,6 +128,7 @@ export default function RecrutadorView({ db, setCandidatos, usuario }) {
   const candidatosExibidos = meusCandidatos
     .slice()
     .reverse()
+    .sort((a, b) => (ORDEM_PRIORIDADE[getStatusCandidato(a)] ?? 9) - (ORDEM_PRIORIDADE[getStatusCandidato(b)] ?? 9))
     .filter((c) => {
       if (filtro !== 'todos' && getStatusCandidato(c) !== filtro) return false
       if (busca.trim()) {
