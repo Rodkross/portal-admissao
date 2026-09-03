@@ -152,18 +152,29 @@ export async function criarCandidatoFB(candidato) {
   await setDoc(doc(collection(db, 'candidatos')), { ...dados, criadoEm: serverTimestamp() })
 }
 
+// Fila por candidato: garante que leitura-modificação-gravação concorrentes não se
+// sobrescrevam (a última gravando uma versão lida antes da anterior terminar).
+const filasAtualizacao = new Map()
+
 export async function atualizarCandidatoFB(id, fn) {
   // `fn` opera sobre o doc atual — lê, aplica e grava (documento pequeno, OK).
-  try {
+  const anterior = filasAtualizacao.get(id) || Promise.resolve()
+  const tarefa = anterior.catch(() => { }).then(async () => {
     const snap = await getDoc(doc(db, 'candidatos', id))
     if (!snap.exists()) return
     const atualizado = fn({ id: snap.id, ...snap.data() })
     const dados = { ...atualizado }
     delete dados.id
     await setDoc(doc(db, 'candidatos', id), dados)
+  })
+  filasAtualizacao.set(id, tarefa)
+  try {
+    await tarefa
   } catch (e) {
     console.error('Falha ao salvar candidato no Firestore (verifique as regras e o login anônimo):', e)
     throw e
+  } finally {
+    if (filasAtualizacao.get(id) === tarefa) filasAtualizacao.delete(id)
   }
 }
 

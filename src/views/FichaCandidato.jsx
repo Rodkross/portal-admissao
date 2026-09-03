@@ -120,7 +120,7 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
     }
   }
 
-  function salvar(e) {
+  async function salvar(e) {
     e.preventDefault()
     const f = form
     if (!f.nome?.trim()) return setErro('Informe o nome completo.')
@@ -153,9 +153,12 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
     if (motociclista && !f.cnhCategoria) return setErro('Informe a categoria da CNH.')
     setErro('')
     const up = (s) => (s || '').trim().toUpperCase()
-    atualizarCandidato(candidato.id, (c) => ({
-      ...c,
-      nome: up(f.nome),
+    // Aguarda a gravação no Firestore antes de avançar, para não sobrescrever a ficha
+    // com uma leitura desatualizada (o próprio atualizarCandidato já serializa).
+    try {
+      await atualizarCandidato(candidato.id, (c) => ({
+        ...c,
+        nome: up(f.nome),
       telefone: onlyDigits(f.telefone),
       ficha: {
         ...f,
@@ -180,7 +183,11 @@ export default function FichaCandidato({ candidato, atualizarCandidato, onSalvo 
           : [],
         atualizadoEm: new Date().toISOString(),
       },
-    }))
+      }))
+    } catch {
+      setErro('Não foi possível salvar a ficha. Verifique sua conexão e tente novamente.')
+      return
+    }
     setSalvo(true)
     onSalvo?.()
   }
