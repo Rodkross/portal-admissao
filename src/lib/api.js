@@ -15,7 +15,7 @@ import {
   query, where, orderBy, limit, updateDoc, serverTimestamp,
 } from 'firebase/firestore'
 import {
-  signInWithEmailAndPassword, signOut, onAuthStateChanged,
+  signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously,
 } from 'firebase/auth'
 import {
   ref, uploadBytes, deleteObject, getDownloadURL,
@@ -60,6 +60,17 @@ export function observarSessao(cb) {
 }
 
 export const logoutFB = () => signOut(auth)
+
+// Login anônimo para o portal do candidato (necessário para as regras do Firestore).
+// Não faz nada se já houver uma sessão (ex.: usuário interno navegando na área do candidato).
+export async function entrarAnonimoFB() {
+  if (auth.currentUser) return
+  try {
+    await signInAnonymously(auth)
+  } catch (e) {
+    console.error('Falha no login anônimo (verifique se o provedor Anônimo está ativo no Firebase Auth):', e)
+  }
+}
 
 export async function criarUsuarioFB({ nome, email, senha, perfil }, usuarioAtual) {
   if (!usuarioAtual || usuarioAtual.perfil !== 'rh') {
@@ -123,9 +134,16 @@ export function observarUsuarios(cb) {
 // ---------------- Candidatos (Firestore, tempo real) ----------------
 
 export function observarCandidatos(cb) {
-  return onSnapshot(collection(db, 'candidatos'), (snap) => {
-    cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-  })
+  const escutar = () => onSnapshot(
+    collection(db, 'candidatos'),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    // Se a escuta morrer (ex.: permissão negada antes do login anônimo concluir), reconecta.
+    (err) => {
+      console.error('observarCandidatos:', err)
+      setTimeout(escutar, 2000)
+    },
+  )
+  return escutar()
 }
 
 export async function criarCandidatoFB(candidato) {
@@ -136,12 +154,17 @@ export async function criarCandidatoFB(candidato) {
 
 export async function atualizarCandidatoFB(id, fn) {
   // `fn` opera sobre o doc atual — lê, aplica e grava (documento pequeno, OK).
-  const snap = await getDoc(doc(db, 'candidatos', id))
-  if (!snap.exists()) return
-  const atualizado = fn({ id: snap.id, ...snap.data() })
-  const dados = { ...atualizado }
-  delete dados.id
-  await setDoc(doc(db, 'candidatos', id), dados)
+  try {
+    const snap = await getDoc(doc(db, 'candidatos', id))
+    if (!snap.exists()) return
+    const atualizado = fn({ id: snap.id, ...snap.data() })
+    const dados = { ...atualizado }
+    delete dados.id
+    await setDoc(doc(db, 'candidatos', id), dados)
+  } catch (e) {
+    console.error('Falha ao salvar candidato no Firestore (verifique as regras e o login anônimo):', e)
+    throw e
+  }
 }
 
 export async function marcarNotificacoesLidasFB(para) {

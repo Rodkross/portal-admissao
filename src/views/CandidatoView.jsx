@@ -124,6 +124,8 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
             if (d.length !== 11) return setErro('Digite os 11 dígitos do CPF.')
             if (!db.candidatos.some((c) => c.cpf === d)) return setErro('CPF não encontrado. Confirme com o recrutador se o link foi enviado.')
             setErro('')
+            // Grava o CPF na URL para o acesso sobreviver a F5 / compartilhamento.
+            location.hash = `#/acesso/${d}`
           }}
           className="btn-primary w-full mt-4"
         >

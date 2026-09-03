@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { observarCandidatos, observarSessao, logoutFB, observarNotificacoes, marcarNotificacoesLidasFB, notificarFB, criarCandidatoFB, atualizarCandidatoFB, observarConfig } from './lib/api'
+import { observarCandidatos, observarSessao, logoutFB, observarNotificacoes, marcarNotificacoesLidasFB, notificarFB, criarCandidatoFB, atualizarCandidatoFB, observarConfig, entrarAnonimoFB } from './lib/api'
 import RecrutadorView from './views/RecrutadorView'
 import CandidatoView from './views/CandidatoView'
 import RhView from './views/RhView'
@@ -17,6 +17,7 @@ function App() {
   const [db, setDb] = useState({ candidatos: [], notificacoes: [] })
   const [usuario, setUsuario] = useState(null) // null = carregando; false = deslogado
   const [carregando, setCarregando] = useState(true)
+  const [authPronto, setAuthPronto] = useState(false)
   const [perfil, setPerfil] = useState('recrutador')
   const [mHash] = useState(() => location.hash.match(/^#\/acesso\/(\d+)/))
   const [hashAtual, setHashAtual] = useState(location.hash)
@@ -26,22 +27,30 @@ function App() {
   useEffect(() => {
     const unsub = observarSessao((u) => {
       setUsuario(u || false)
+      setAuthPronto(true)
       setCarregando(false)
     })
     return unsub
   }, [])
 
-  // Candidatos em tempo real
+  // Login anônimo para quem está na área do candidato
   useEffect(() => {
+    if (hashAtual.startsWith('#/acesso/')) entrarAnonimoFB()
+  }, [hashAtual])
+
+  // Candidatos em tempo real (só após a sessão resolver, para não morrer por permissão)
+  useEffect(() => {
+    if (!authPronto) return
     const unsub = observarCandidatos((candidatos) => setDb((prev) => ({ ...prev, candidatos })))
     return unsub
-  }, [])
+  }, [authPronto])
 
   // Configuração geral (empresas, funções)
   useEffect(() => {
+    if (!authPronto) return
     const unsub = observarConfig((config) => setDb((prev) => ({ ...prev, empresas: config.empresas || [], funcoes: config.funcoes || [] })))
     return unsub
-  }, [])
+  }, [authPronto])
 
   const chaveNotificacoes = usuario?.perfil === 'rh' ? 'rh' : usuario?.nome || ''
 

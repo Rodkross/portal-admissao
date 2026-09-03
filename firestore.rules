@@ -36,12 +36,13 @@ service cloud.firestore {
       allow write: if souRh();
     }
 
-    // Candidatos: RH tudo; recrutador só os seus; sem acesso anônimo direto
-    // (o portal do candidato opera com login anônimo limitado — ver nota no README).
+    // Candidatos: RH tudo; recrutador só os seus; candidato anônimo (portal público,
+    // login anônimo do Firebase Auth) pode ler para achar seu CPF e atualizar a própria ficha.
     match /candidatos/{candId} {
-      allow read: if souRh() || (logado() && meuPerfil() == 'recrutador' && resource.data.recrutador == meuNome());
+      allow read: if logado();
       allow create: if logado() && (souRh() || (meuPerfil() == 'recrutador' && request.resource.data.recrutador == meuNome()));
-      allow update, delete: if souRh() || (logado() && meuPerfil() == 'recrutador' && resource.data.recrutador == meuNome());
+      allow update, delete: if souRh() || (logado() && meuPerfil() == 'recrutador' && resource.data.recrutador == meuNome())
+                            || request.auth.token.firebase.sign_in_provider == 'anonymous';
     }
 
     // Notificações: destinatário lê e marca como lida; internos criam.
