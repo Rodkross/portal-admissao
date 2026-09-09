@@ -1,8 +1,10 @@
 import { jsPDF } from 'jspdf'
-import { statusDocumentos, maskCPF, maskPhone, docsPara, calcularIdade, isMotociclista } from './storage'
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { statusDocumentos, maskCPF, maskPhone, calcularIdade, isMotociclista } from './storage'
 import { urlArquivoFB } from './api'
 
-const statusLabel = { pendente: 'PENDENTE', aprovado: 'APROVADO', reprovado: 'REPROVADO' }
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
 
 /** Todas as linhas da ficha do candidato — fonte única usada no portal do RH e no PDF. */
 export function fichaLinhas(c) {
@@ -56,6 +58,39 @@ export function fichaLinhas(c) {
   return linhas.map(([k, v]) => [k, v || '—'])
 }
 
+/** Baixa uma URL remota e devolve um dataURL. Tenta fetch (precisa de CORS no Storage) e, se falhar, tenta via <img crossOrigin>. */
+async function baixarComoDataUrl(url) {
+  // 1ª tentativa: fetch (funciona se o bucket tiver CORS configurado — ver cors.json)
+  try {
+    const blob = await fetch(url, { mode: 'cors' }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.blob()
+    })
+    return await new Promise((ok, falhou) => {
+      const fr = new FileReader()
+      fr.onload = () => ok(String(fr.result))
+      fr.onerror = falhou
+      fr.readAsDataURL(blob)
+    })
+  } catch { /* CORS/bloqueio — tenta via <img> */ }
+  // 2ª tentativa: carrega como imagem com crossOrigin anônimo (o Storage geralmente responde com ACAO:* para getDownloadURL)
+  return new Promise((ok, falhou) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        canvas.getContext('2d').drawImage(img, 0, 0)
+        ok(canvas.toDataURL('image/jpeg', 0.92))
+      } catch (e) { falhou(e) } // canvas contaminado → CORS realmente bloqueado
+    }
+    img.onerror = falhou
+    img.src = url
+  })
+}
+
 /** Converte um dataUrl de imagem (ex.: webp) para JPEG via canvas, formato que o jsPDF embute. */
 function converterParaJpeg(dataUrl) {
   return new Promise((resolve, reject) => {
@@ -70,6 +105,34 @@ function converterParaJpeg(dataUrl) {
     img.onerror = reject
     img.src = dataUrl
   })
+}
+
+/** Baixa bytes crus de uma URL remota (usado para PDFs anexados no Storage). */
+async function baixarBytes(url) {
+  const resp = await fetch(url, { mode: 'cors' })
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  return await resp.arrayBuffer()
+}
+
+/** Renderiza todas as páginas de um PDF (dataURL ou ArrayBuffer) como dataURLs JPEG. */
+async function renderizarPaginasPdf(fonte) {
+  const doc = fonte instanceof ArrayBuffer
+    ? await pdfjsLib.getDocument({ data: fonte }).promise
+    : await pdfjsLib.getDocument(fonte).promise
+  const paginas = []
+  for (let n = 1; n <= doc.numPages; n++) {
+    const page = await doc.getPage(n)
+    // escala para largura útil de ~1400px (boa qualidade sem estourar o tamanho do arquivo)
+    const base = page.getViewport({ scale: 1 })
+    const scale = Math.min(1400 / base.width, 3)
+    const viewport = page.getViewport({ scale })
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(viewport.width)
+    canvas.height = Math.ceil(viewport.height)
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+    paginas.push(canvas.toDataURL('image/jpeg', 0.9))
+  }
+  return paginas
 }
 
 export async function gerarFichaPDF(candidato) {
@@ -134,35 +197,21 @@ export async function gerarFichaPDF(candidato) {
   const linhasSituacao = doc.splitTextToSize(`Situação: ${situacao}`, W - M * 2)
   doc.text(linhasSituacao, M, y)
 
-  // ---------- Documentação Anexa (documentos digitalizados embutidos) ----------
-  const arquivos = candidato.arquivos || []
+  // ---------- Documentação Anexa (somente documentos APROVADOS, digitalização embutida) ----------
+  const arquivos = (candidato.arquivos || []).filter((a) => a.status === 'aprovado')
   if (arquivos.length > 0) {
-    doc.addPage()
     y = 22
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(11)
-    doc.setTextColor(30)
-    doc.text(`Documentação Anexa (${arquivos.length})`, M, y)
-    y += 8
 
-    const larguraUtil = W - M * 2
+    const larguraUtil = W - 10 // margens estreitas: documento ocupa quase toda a folha
+    const alturaUtilFolha = 285 - 12 // área útil abaixo do topo (12mm)
+    let primeira = false
     for (const arq of arquivos) {
-      // rótulo do arquivo
-      if (y > 265) { doc.addPage(); y = 22 }
-      // (await permitido: gerarFichaPDF é async)
-      const nomesTags = (arq.tags || []).map((id) => docsPara(candidato).find((t) => t.id === id)?.nome || id).join(', ')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(9.5)
-      doc.setTextColor(30)
-      const rotulo = doc.splitTextToSize(nomesTags || 'Documento', larguraUtil - 30)
-      doc.text(rotulo, M, y)
-      doc.setTextColor(...(arq.status === 'aprovado' ? [22, 130, 60] : arq.status === 'reprovado' ? [190, 40, 40] : [180, 130, 0]))
-      doc.text(statusLabel[arq.status] || arq.status, W - M, y, { align: 'right' })
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8)
-      doc.setTextColor(120)
-      doc.text(doc.splitTextToSize(`Enviado em ${new Date(arq.enviadoEm).toLocaleString('pt-BR')}`, larguraUtil), M, y + 4)
-      y += 10
+      // cada documento começa em uma página nova, com seu título no topo
+      if (!primeira) { doc.addPage() }
+      primeira = false
+      y = 22
+      // digitalização do documento (sem rótulo/texto — apenas a imagem ocupando a folha)
+      y = 12 // começa no topo da folha, maximizando a área da digitalização
 
       // resolve a URL do documento (Firebase Storage) quando necessário
       let src = arq.dataUrl || null
@@ -171,47 +220,61 @@ export async function gerarFichaPDF(candidato) {
           src = await urlArquivoFB(arq.caminho)
         } catch { src = null }
       }
-      if (src && /^https?:/i.test(src) && arq.tipo?.startsWith('image/')) {
-        // converte a URL remota em dataURL para embutir no PDF
-        try {
-          const blob = await fetch(src).then((r) => r.blob())
-          src = await new Promise((ok, falhou) => {
-            const fr = new FileReader()
-            fr.onload = () => ok(String(fr.result))
-            fr.onerror = falhou
-            fr.readAsDataURL(blob)
-          })
-        } catch { src = null }
+
+      const ehTipoImagem = arq.tipo?.startsWith('image/')
+      const ehTipoPdf = (arq.tipo || '').includes('pdf') || arq.nomeArquivo?.toLowerCase().endsWith('.pdf')
+
+      /** Embute um dataURL de imagem ocupando a largura máxima da folha (mín. margens). */
+      const embutirImagem = async (data, larguraMax = larguraUtil) => {
+        if (!/^data:image\/(jpeg|jpg|png);/i.test(data)) data = await converterParaJpeg(data)
+        const props = doc.getImageProperties(data)
+        // largura máxima possível: se a altura resultante estourar a folha, limita pela altura
+        let larguraImg = larguraMax
+        let alturaImg = (props.height / props.width) * larguraImg
+        if (alturaImg > alturaUtilFolha) {
+          alturaImg = alturaUtilFolha
+          larguraImg = (props.width / props.height) * alturaImg
+        }
+        if (y + alturaImg > 285) { doc.addPage(); y = 12 }
+        doc.addImage(data, props.fileType === 'PNG' ? 'PNG' : 'JPEG', (W - larguraImg) / 2, y, larguraImg, alturaImg)
+        y += alturaImg + 2
       }
 
-      // embute imagem (qualquer image/*) direto no PDF
-      const ehImagem = src && /^data:image\//i.test(src)
-      if (ehImagem) {
-        try {
-          // jsPDF só embute PNG/JPEG nativamente; converte outros formatos (webp etc.) via canvas
-          let data = src
-          if (!/^data:image\/(jpeg|jpg|png);/i.test(data)) {
-            data = await converterParaJpeg(data)
-          }
-          const props = doc.getImageProperties(data)
-          const alturaImg = Math.min((props.height / props.width) * larguraUtil, 160)
-          const larguraImg = (props.width / props.height) * alturaImg
-          if (y + alturaImg > 280) { doc.addPage(); y = 22 }
-          doc.addImage(data, props.fileType === 'PNG' ? 'PNG' : 'JPEG', M + (larguraUtil - larguraImg) / 2, y, larguraImg, alturaImg)
-          y += alturaImg + 10
-        } catch {
-          doc.setTextColor(190, 40, 40)
-          doc.setFontSize(8.5)
-          doc.text('(imagem ilegível — baixe o arquivo pelo portal)', M, y)
-          doc.setTextColor(30)
-          y += 8
-        }
-      } else {
-        doc.setTextColor(160)
+      /** Nota no lugar do documento quando não foi possível embutir. */
+      const notaFalha = (msg, cor = [160]) => {
+        doc.setTextColor(...cor)
         doc.setFontSize(8.5)
-        doc.text(src ? '(documento PDF anexado — baixe pelo portal para visualizar)' : '(visualização do arquivo indisponível; baixe pelo portal)', M, y)
+        doc.text(doc.splitTextToSize(msg, larguraUtil), M, y)
         doc.setTextColor(30)
         y += 8
+      }
+
+      try {
+        if (ehTipoImagem) {
+          // imagem: baixa (dataURL ou URL remota) e embute
+          let data = src
+          if (data && /^https?:/i.test(data)) data = await baixarComoDataUrl(data)
+          if (data && /^data:image\//i.test(data)) await embutirImagem(data)
+          else notaFalha('(imagem não pôde ser embutida: acesso ao Storage bloqueado — aplique o cors.json ao bucket e gere o PDF novamente)', [190, 40, 40])
+        } else if (ehTipoPdf) {
+          // PDF anexado: baixa os bytes e renderiza cada página como imagem dentro da ficha
+          let paginas = null
+          if (src && /^data:application\/pdf/i.test(src)) {
+            paginas = await renderizarPaginasPdf(src)
+          } else if (src && /^https?:/i.test(src)) {
+            const bytes = await baixarBytes(src)
+            paginas = await renderizarPaginasPdf(bytes)
+          }
+          if (paginas && paginas.length) {
+            for (const pag of paginas) await embutirImagem(pag)
+          } else {
+            notaFalha('(PDF não pôde ser embutido: acesso ao Storage bloqueado — aplique o cors.json ao bucket e gere o PDF novamente)', [190, 40, 40])
+          }
+        } else {
+          notaFalha(src ? '(tipo de arquivo não suportado para embutir — baixe pelo portal)' : '(visualização do arquivo indisponível; baixe pelo portal)')
+        }
+      } catch {
+        notaFalha('(falha ao renderizar o documento — baixe o arquivo pelo portal)', [190, 40, 40])
       }
       y += 4
     }

@@ -19,7 +19,7 @@ export default function LoginView({ perfilEsperado, onLogado }) {
 
   return (
     <div className="card max-w-sm w-full mx-auto">
-      <div className="size-12 mx-auto rounded-2xl bg-brand-600 text-white flex items-center justify-center text-xl font-bold shadow-[0_4px_12px_rgb(39_69_228/0.35)] mb-4">A</div>
+      <div className="size-12 mx-auto rounded-2xl bg-brand-600 text-white flex items-center justify-center text-xl font-bold shadow-[0_4px_12px_rgb(56_118_104/0.35)] mb-4">A</div>
       <h2 className="text-xl font-bold text-slate-900 text-center">
         {perfilEsperado === 'rh' ? 'Acesso do RH' : 'Acesso do Recrutador'}
       </h2>
