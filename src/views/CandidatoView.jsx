@@ -54,7 +54,7 @@ function Stepper({ etapa, maxEtapa, irPara, docsObrigatoriosCompletos, bloqueada
                 <span
                   className={`size-9 shrink-0 rounded-full flex items-center justify-center text-sm font-bold transition ${
                     atual
-                      ? 'bg-brand-600 text-white shadow-[0_4px_12px_rgb(39_69_228/0.35)] ring-4 ring-brand-100'
+                      ? 'bg-brand-600 text-white shadow-[0_4px_12px_rgb(56_118_104/0.35)] ring-4 ring-brand-100'
                       : concluida
                         ? 'bg-emerald-500 text-white group-hover:bg-emerald-600'
                         : 'bg-slate-100 text-slate-400 border border-slate-200'
@@ -161,12 +161,21 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
   const enviados = statusDocs.filter((d) => d.arquivo).length
   const progresso = exigidos.length ? Math.round((enviados / exigidos.length) * 100) : 0
 
-  // Se o RH reprovar algum documento após o envio, o painel volta automaticamente para a etapa de documentos
+  // Controle de estados pós-envio (derivado dos dados — sobrevive a relogin):
+  // - temReprovadoPosEnvio: RH reprovou algo → volta automaticamente para a etapa de documentos
+  // - reenvioPendente: candidato corrigiu tudo mas ainda NÃO reenviou → também volta, com reenvio liberado
+  // - emAnalise: enviado e sem pendências → mostra apenas a mensagem de aguardo, sem nenhum botão
   const temReprovadoPosEnvio = !!candidato.envioRH && reprovados > 0
-  const etapaEfetiva = temReprovadoPosEnvio ? 2 : etapa
-  const podeReenviar = temReprovadoPosEnvio
+  const reenvioPendente = !!candidato.envioRH && !temReprovadoPosEnvio
+    && arquivos.some((a) => a.status === 'pendente' && new Date(a.enviadoEm || 0) > new Date(candidato.envioRH.em || 0))
+  const podeReenviar = temReprovadoPosEnvio || reenvioPendente
+  const emAnalise = !!candidato.envioRH && !podeReenviar
+  // Em exigência (RH reprovou após o envio): a página vai direto para a etapa de documentos (2),
+  // mesmo que a etapa persistida do candidato esteja em 3 — o reenvio começa sempre na documentação.
+  const etapaEfetiva = podeReenviar ? 2 : etapa
 
   function abrirUpload(e) {
+    if (emAnalise) return // documentação em análise: sem ações do candidato
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
@@ -182,6 +191,7 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
   }
 
   function abrirCorrecao(arq) {
+    if (emAnalise) return // documentação em análise: sem ações do candidato
     setEditando(arq)
     setArquivoPendente(null)
     setTrocarArquivo(false)
@@ -189,7 +199,6 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
     setErroLocal('')
     setUploadAberto(true)
   }
-  void abrirCorrecao // (botão removido: o retorno à etapa 2 é automático quando o RH reprova)
 
   function fecharModal() {
     setUploadAberto(false)
@@ -211,10 +220,15 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
   }
 
   function excluirArquivo() {
+    if (emAnalise) return // documentação em análise: sem ações do candidato
     const alvo = editando
+    // Documentos validados pelo RH não podem ser excluídos pelo candidato — apenas reprovados
+    if (alvo?.status === 'aprovado') return setErroLocal('Este documento já foi validado pelo RH e não pode ser excluído.')
     atualizarCandidato(candidato.id, (c) => ({
       ...c,
       arquivos: (c.arquivos || []).filter((a) => a.id !== alvo.id),
+      // reinicia o ciclo de envio: a documentação volta a "não enviada" e o candidato refaz o reenvio
+      envioRH: null,
     }))
     excluirArquivoFB(candidato.id, alvo.id, alvo.nomeArquivo)
     fecharModal()
@@ -369,7 +383,7 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
       {/* Cabeçalho + progresso */}
       <section className="card text-left">
         <div className="flex items-center gap-4">
-          <div className="size-12 shrink-0 rounded-2xl bg-brand-600 text-white flex items-center justify-center text-xl font-bold shadow-[0_4px_12px_rgb(39_69_228/0.35)]">
+          <div className="size-12 shrink-0 rounded-2xl bg-brand-600 text-white flex items-center justify-center text-xl font-bold shadow-[0_4px_12px_rgb(56_118_104/0.35)]">
             {candidato.nome.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
@@ -413,8 +427,8 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
         </section>
       )}
 
-      {/* ---------- Documentação enviada e em análise: sem etapas, sem edição ---------- */}
-      {candidato.envioRH && !temReprovadoPosEnvio ? (
+      {/* ---------- Documentação enviada e em análise: sem etapas, sem botões ---------- */}
+      {emAnalise ? (
         <section className="card text-center py-10">
           <div className="size-16 mx-auto rounded-full bg-emerald-50 ring-1 ring-emerald-200 flex items-center justify-center text-3xl mb-4">📨</div>
           <h2 className="text-xl font-bold text-slate-900">Documentação enviada com sucesso!</h2>
@@ -422,6 +436,7 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
             Obrigado! O nosso RH está fazendo a <strong>validação dos seus dados e da documentação enviada</strong>.
             Assim que a análise for concluída, nós entraremos em contato com você. 🍀
           </p>
+          <p className="text-xs text-emerald-700 mt-4 font-medium">⏳ Aguardando retorno do RH — você não precisa fazer mais nada por enquanto.</p>
           <p className="text-xs text-slate-400 mt-5">
             Enviado ao RH em {new Date(candidato.envioRH.em).toLocaleString('pt-BR')}
           </p>
@@ -471,12 +486,18 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
           )}
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {statusDocs.map((d) => (
+          {statusDocs.map((d) => {
+            const corrigivel = d.status === 'reprovado' && d.arquivo
+            return (
             <span
               key={d.docId}
+              role={corrigivel ? 'button' : undefined}
+              tabIndex={corrigivel ? 0 : undefined}
+              onClick={corrigivel ? () => abrirCorrecao(d.arquivo) : undefined}
+              onKeyDown={corrigivel ? (e) => (e.key === 'Enter' || e.key === ' ') && abrirCorrecao(d.arquivo) : undefined}
               title={
                 d.status === 'reprovado'
-                  ? `Reprovado${d.observacao ? ` — Obs. do RH: ${d.observacao}` : ''} — reenvie`
+                  ? `Reprovado${d.observacao ? ` — Obs. do RH: ${d.observacao}` : ''} — toque para corrigir`
                   : d.arquivo
                     ? 'Aguardando validação do RH'
                     : 'Não enviado'
@@ -508,8 +529,12 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
                 <span className="size-2 rounded-full bg-current/60 shrink-0 animate-pulse" aria-hidden="true" />
               )}
               {d.nome}
+              {corrigivel && (
+                <span className="ml-0.5 underline underline-offset-2 decoration-dotted">corrigir →</span>
+              )}
             </span>
-          ))}
+            )
+          })}
         </div>
       </section>
 
@@ -538,6 +563,7 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
                 🗑 Excluir envio
               </button>
             </div>
+            {erroLocal && <p className="alert-error mb-3">{erroLocal}</p>}
             {trocarArquivo && (
               <input
                 type="file"
@@ -561,27 +587,45 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
         </div>
       )}
 
-      {/* Arquivos enviados */}
-      {arquivos.length > 0 && (
+      {/* Arquivos enviados — apenas a situação mais recente de cada documento (sem duplicar versões antigas) */}
+      {(() => {
+        // mostra cada arquivo apenas se não existir versão mais nova cobrindo as mesmas tags;
+        // versões antigas substituídas por correção deixam de aparecer (evita "em análise" + "reprovado" duplicados)
+        const unicos = arquivos.filter((a) =>
+          !arquivos.some((o) =>
+            o.id !== a.id
+            && new Date(o.enviadoEm || 0) > new Date(a.enviadoEm || 0)
+            && (o.tags || []).some((t) => (a.tags || []).includes(t)),
+          ),
+        )
+        return unicos.length > 0 && (
         <section className="card text-left">
-          <h3 className="section-title mb-3">Arquivos enviados ({arquivos.length})</h3>
+          <h3 className="section-title mb-3">Arquivos enviados ({unicos.length})</h3>
           <div className="space-y-2">
-            {arquivos.map((a) => (
-              <div key={a.id} className="card-sm flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-800 truncate">{tagsDoArquivo(a).join(', ') || 'Documento'}</p>
-                  <p className="text-xs text-slate-500 truncate">{a.status === 'aprovado' ? 'Validado pelo RH' : a.status === 'reprovado' ? 'Aguardando correção' : 'Em análise pelo RH'}</p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className={`badge ${a.status === 'aprovado' ? 'badge-ok' : a.status === 'reprovado' ? 'badge-bad' : 'badge-warn'}`}>
-                    {a.status === 'aprovado' ? '✔ OK' : a.status === 'reprovado' ? '✖ Reprovado' : '⏳ Em análise'}
-                  </span>
+            {unicos.map((a) => (
+              <div key={a.id} className="card-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{tagsDoArquivo(a).join(', ') || 'Documento'}</p>
+                    <p className="text-xs text-slate-500 truncate">{a.status === 'aprovado' ? 'Validado pelo RH' : a.status === 'reprovado' ? `Aguardando correção${a.observacao ? ` — ${a.observacao}` : ''}` : 'Em análise pelo RH'}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {a.status === 'reprovado' && (
+                      <button type="button" onClick={() => abrirCorrecao(a)} className="btn-outline btn-sm !text-rose-600 !border-rose-300 hover:!bg-rose-50">
+                        ✏ Corrigir
+                      </button>
+                    )}
+                    <span className={`badge ${a.status === 'aprovado' ? 'badge-ok' : a.status === 'reprovado' ? 'badge-bad' : 'badge-warn'}`}>
+                      {a.status === 'aprovado' ? '✔ OK' : a.status === 'reprovado' ? '✖ Reprovado' : '⏳ Em análise'}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         </section>
-      )}
+        )
+      })()}
 
       {/* navegação da etapa 2 */}
           <div className="flex justify-between items-center gap-3">

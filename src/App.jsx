@@ -5,6 +5,7 @@ import CandidatoView from './views/CandidatoView'
 import RhView from './views/RhView'
 import CadastrosView from './views/CadastrosView'
 import LoginView from './views/LoginView'
+import LandingView from './views/LandingView'
 
 // Abas internas (protegidas por login) e aba pública do candidato.
 const ABAS_INTERNAS = [
@@ -22,6 +23,7 @@ function App() {
   const [mHash] = useState(() => location.hash.match(/^#\/acesso\/(\d+)/))
   const [hashAtual, setHashAtual] = useState(location.hash)
   const [sinoAberto, setSinoAberto] = useState(false)
+  const [verLogin, setVerLogin] = useState(false) // deslogado: landing primeiro, login só ao clicar
 
   // Sessão (Firebase Auth)
   useEffect(() => {
@@ -97,25 +99,25 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="sticky top-0 z-20 bg-slate-950/95 backdrop-blur text-white border-b border-white/10">
+      <header className="sticky top-0 z-20 bg-[#f4f6fa]/85 backdrop-blur text-calm-900 border-b border-white/70 shadow-[0_2px_12px_rgb(163_177_178/0.25)]">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
           <a href="#/" className="flex items-center gap-3">
-            <span className="size-9 rounded-xl bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center font-black shadow-[0_4px_12px_rgb(39_69_228/0.5)]">A</span>
+            <span className="size-9 rounded-xl bg-gradient-to-br from-calm-400 to-calm-700 flex items-center justify-center font-black text-white shadow-[0_4px_12px_rgb(56_118_104/0.4)]">A</span>
             <span>
               <span className="block text-sm font-bold leading-tight">Portal de Admissão</span>
-              <span className="block text-[11px] text-slate-400 leading-tight">Documentação de novos colaboradores</span>
+              <span className="block text-[11px] text-calm-700/60 leading-tight">Documentação de novos colaboradores</span>
             </span>
           </a>
           {acessandoComoCandidato ? (
-            <a href="#/" className="text-sm text-slate-300 hover:text-white">Área interna →</a>
+            <a href="#/" className="text-sm text-calm-700/80 hover:text-calm-900">Área interna →</a>
           ) : usuario ? (
             <div className="flex items-center gap-3">
-              <nav className="flex gap-1 bg-white/5 rounded-xl p-1">
+              <nav className="flex gap-1 neo-inset p-1">
                 {abasPermitidas.map((a) => (
                   <button
                     key={a.id}
                     onClick={() => setPerfil(a.id)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${abaAtiva === a.id ? 'bg-brand-600 text-white shadow-[0_1px_3px_rgb(0_0_0/0.4)]' : 'text-slate-300 hover:text-white hover:bg-white/5'}`}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${abaAtiva === a.id ? 'bg-white text-calm-800 shadow-sm' : 'text-calm-700/70 hover:text-calm-900'}`}
                   >
                     {a.emoji} {a.label}
                   </button>
@@ -126,7 +128,7 @@ function App() {
               <div className="relative">
                 <button
                   onClick={() => setSinoAberto((v) => !v)}
-                  className="relative size-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-lg transition"
+                  className="relative size-9 rounded-xl neo-btn flex items-center justify-center text-lg active:neo-btn-active"
                   title="Notificações"
                 >
                   🔔
@@ -162,13 +164,13 @@ function App() {
                   </>
                 )}
               </div>
-              <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-white/10">
-                <span className="size-8 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold">
+              <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-calm-200/70">
+                <span className="size-8 rounded-full bg-gradient-to-br from-calm-400 to-calm-600 text-white flex items-center justify-center text-xs font-bold shadow-sm">
                   {usuario.nome.charAt(0).toUpperCase()}
                 </span>
                 <div className="leading-tight">
                   <p className="text-xs font-semibold">{usuario.nome}</p>
-                  <button onClick={async () => { await logoutFB(); setUsuario(false) }} className="text-[11px] text-slate-400 hover:text-white">Sair</button>
+                  <button onClick={async () => { await logoutFB(); setUsuario(false) }} className="text-[11px] text-calm-700/60 hover:text-calm-900">Sair</button>
                 </div>
               </div>
             </div>
@@ -180,16 +182,23 @@ function App() {
         {acessandoComoCandidato ? (
           <CandidatoView db={db} cpf={cpfAtivo} atualizarCandidato={atualizarCandidato} notificar={notificar} />
         ) : carregando ? (
-          <div className="py-20 text-center text-slate-400 text-sm">Carregando…</div>
+          <div className="py-20 text-center text-calm-700/60 text-sm">Carregando…</div>
         ) : !usuario ? (
-          <div className="max-w-sm mx-auto space-y-5">
-            <div className="grid grid-cols-2 gap-2 bg-white rounded-xl border border-slate-200 p-1.5 shadow-[0_1px_2px_rgb(16_24_40/0.06)]">
-              <button onClick={() => setPerfil('recrutador')} className={`py-2 rounded-lg text-sm font-semibold transition ${perfil === 'recrutador' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>{'🧑‍💼 Recrutador'}</button>
-              <button onClick={() => setPerfil('rh')} className={`py-2 rounded-lg text-sm font-semibold transition ${perfil === 'rh' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>✅ RH</button>
+          verLogin ? (
+            <div className="max-w-sm mx-auto space-y-5">
+              <div className="grid grid-cols-2 gap-2 bg-white rounded-xl border border-slate-200 p-1.5 shadow-[0_1px_2px_rgb(16_24_40/0.06)]">
+                <button onClick={() => setPerfil('recrutador')} className={`py-2 rounded-lg text-sm font-semibold transition ${perfil === 'recrutador' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>{'🧑‍💼 Recrutador'}</button>
+                <button onClick={() => setPerfil('rh')} className={`py-2 rounded-lg text-sm font-semibold transition ${perfil === 'rh' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>✅ RH</button>
+              </div>
+              <LoginView perfilEsperado={perfil} onLogado={setUsuario} />
+              <p className="text-center text-xs text-slate-500">É candidato? Use o link recebido por WhatsApp ou <br /> <a href="#/acesso/" className="text-brand-600 font-medium hover:underline">acesse pelo seu CPF</a>.</p>
+              <p className="text-center">
+                <button onClick={() => setVerLogin(false)} className="text-xs text-slate-400 hover:text-slate-600 hover:underline">← Voltar para a página inicial</button>
+              </p>
             </div>
-            <LoginView perfilEsperado={perfil} onLogado={setUsuario} />
-            <p className="text-center text-xs text-slate-500">É candidato? Use o link recebido por WhatsApp ou <br /> <a href="#/acesso/" className="text-brand-600 font-medium hover:underline">acesse pelo seu CPF</a>.</p>
-          </div>
+          ) : (
+            <LandingView onEntrar={() => setVerLogin(true)} />
+          )
         ) : abaAtiva === 'recrutador' ? (
           <RecrutadorView db={db} setCandidatos={setCandidatos} usuario={usuario} notificar={notificar} />
         ) : abaAtiva === 'rh' ? (

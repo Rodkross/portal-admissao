@@ -230,17 +230,15 @@ function ArquivoPreview({ arquivo, nomeTagPorId }) {
   if (!src) return null
   return (
     <div className="mt-2">
-      {arquivo.dataUrl ? (
-        <>
-          <button
-            type="button"
-            onClick={() => setModalAberto(true)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg transition cursor-pointer"
-          >
-            <span>🔍</span> Visualizar documento completo
-          </button>
+      <button
+        type="button"
+        onClick={() => setModalAberto(true)}
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg transition cursor-pointer"
+      >
+        <span>🔍</span> Visualizar documento completo
+      </button>
 
-          {modalAberto && (
+      {modalAberto && (
             <div
               className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4"
               onClick={() => setModalAberto(false)}
@@ -299,8 +297,6 @@ function ArquivoPreview({ arquivo, nomeTagPorId }) {
               </div>
             </div>
           )}
-        </>
-      ) : null}
     </div>
   )
 }
@@ -754,17 +750,27 @@ export default function RhView({ db, atualizarCandidato, notificar }) {
             <ContratoForm key={cand.id} cand={cand} db={db} atualizarCandidato={atualizarCandidato} />
           </div>
 
-          {/* Validação por ARQUIVO enviado (um arquivo pode cobrir vários docs) — aprovados e substituídos saem da lista */}
-          <h3 className="section-title px-1 mb-2">Arquivos para análise ({arquivosAtivos(cand).filter((a) => a.status !== 'aprovado').length})</h3>
-          <p className="text-[11px] text-slate-400 px-1 mb-2">💡 Apenas a versão mais recente de cada documento aparece aqui. Reenvios antigos e aprovados ficam no histórico no fim da página.</p>
+          {/* Documentação para análise — visão única: um card por arquivo ativo + o que ainda falta */}
+          <h3 className="section-title px-1 mb-2">Documentação para análise ({arquivosAtivos(cand).filter((a) => a.status !== 'aprovado').length} aguardando decisão)</h3>
+          <p className="text-[11px] text-slate-400 px-1 mb-2">💡 Apenas a versão mais recente de cada documento aparece aqui. Use “Visualizar documento completo” para ler o arquivo antes de aprovar ou reprovar.</p>
+          {(() => {
+            const faltam = statusDocumentos(cand).filter((d) => !d.arquivo)
+            if (faltam.length === 0) return null
+            return (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                ⏳ Ainda sem documento para: <strong>{faltam.map((d) => d.nome).join(', ')}</strong>
+              </p>
+            )
+          })()}
           <div className="space-y-3 mb-6">
             {(() => {
-              const ativosPendentes = arquivosAtivos(cand).filter((a) => a.status !== 'aprovado')
+              const ativos = arquivosAtivos(cand)
+              const pendentes = ativos.filter((a) => a.status !== 'aprovado')
               if ((cand.arquivos || []).length === 0) return <p className="text-sm text-slate-400">Nenhum arquivo enviado ainda.</p>
-              if (ativosPendentes.length === 0) return <p className="text-sm text-emerald-700">✅ Tudo analisado — nenhum arquivo aguardando decisão. Veja o histórico no fim da página.</p>
+              if (pendentes.length === 0) return <p className="text-sm text-emerald-700">✅ Tudo analisado — nenhum arquivo aguardando decisão. Veja o histórico no fim da página.</p>
               return null
             })()}
-            {arquivosAtivos(cand).filter((a) => a.status !== 'aprovado').map((a) => {
+            {arquivosAtivos(cand).map((a) => {
               const nomesTags = (a.tags || []).map((id) => docsPara(cand).find((t) => t.id === id)?.nome || id)
               return (
                 <div key={a.id} className="card-sm">
@@ -802,44 +808,19 @@ export default function RhView({ db, atualizarCandidato, notificar }) {
                       </div>
                     </div>
                   ) : (
-                    a.status !== 'aprovado' && (
+                    a.status === 'pendente' && (
                       <div className="flex gap-2 mt-3">
                         <button onClick={() => decidir(cand, a.id, 'aprovado')} className="btn-success btn-sm">✔ Aprovar</button>
                         <button onClick={() => decidir(cand, a.id, 'reprovado')} className="btn-danger btn-sm">✖ Reprovar</button>
                       </div>
                     )
                   )}
+                  {a.status === 'reprovado' && (
+                    <p className="text-xs text-slate-500 mt-3">⏳ Aguardando o candidato reenviar a documentação corrigida.</p>
+                  )}
                 </div>
               )
             })}
-          </div>
-
-          {/* Resumo por informação exigida */}
-          <h3 className="section-title px-1 mb-2">Situação por informação exigida</h3>
-          <p className="text-[11px] text-slate-400 px-1 mb-2">💡 Itens aprovados saem da lista acima. Dê duplo clique em um item aprovado para rever o documento.</p>
-          <div className="grid sm:grid-cols-2 gap-2">
-            {statusDocumentos(cand).map((d) => (
-              <div
-                key={d.docId}
-                onDoubleClick={d.arquivo && d.status === 'aprovado' ? () => setPreviewAprovado({ arquivo: d.arquivo, cand }) : undefined}
-                title={d.arquivo && d.status === 'aprovado' ? 'Duplo clique para visualizar o documento' : undefined}
-                className={`flex items-center justify-between gap-2 border rounded-lg px-3 py-2 text-left bg-slate-50/50 ${
-                  d.arquivo && d.status === 'aprovado' ? 'cursor-pointer border-emerald-200 hover:bg-emerald-50/60 select-none' : 'border-slate-200'
-                }`}
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-800 truncate">{d.nome}</p>
-                  {d.arquivo && (
-                    <p className="text-[11px] text-slate-400 truncate">
-                      Enviado em {d.enviadoEm ? new Date(d.enviadoEm).toLocaleDateString('pt-BR') : '—'}
-                    </p>
-                  )}
-                </div>
-                <span className={`badge ${d.arquivo ? (d.status === 'aprovado' ? 'badge-ok' : d.status === 'reprovado' ? 'badge-bad' : 'badge-warn') : 'badge-neutral'}`}>
-                  {d.arquivo ? (d.status === 'aprovado' ? '✔ OK' : d.status === 'reprovado' ? '✖ Reprov.' : '⏳ Análise') : 'Falta'}
-                </span>
-              </div>
-            ))}
           </div>
 
           {/* Histórico reduzido — envios, aprovações, rejeições e comunicações */}

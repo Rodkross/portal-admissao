@@ -1,19 +1,63 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-brand-50: #eef4ff;
-  --color-brand-100: #dce7fd;
-  --color-brand-200: #c0d3fc;
-  --color-brand-300: #94b5fa;
-  --color-brand-400: #618cf6;
-  --color-brand-500: #3d64f0;
-  --color-brand-600: #2745e4;
-  --color-brand-700: #1f33d1;
-  --color-brand-800: #202da9;
-  --color-brand-900: #1f2b85;
-  --color-brand-950: #171d52;
+  /* 'brand' agora aponta para a paleta calma (verde-sálvia) — re-tematiza o app inteiro */
+  --color-brand-50: #f2f8f5;
+  --color-brand-100: #e0f0e9;
+  --color-brand-200: #c2e1d4;
+  --color-brand-300: #97cbba;
+  --color-brand-400: #6aaf9b;
+  --color-brand-500: #4a9382;
+  --color-brand-600: #387668;
+  --color-brand-700: #2e5f55;
+  --color-brand-800: #284c45;
+  --color-brand-900: #23403a;
+  --color-brand-950: #1a332e;
 
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Paleta calma (wellness) — mesmas cores, nome semântico */
+  --color-calm-50: #f2f8f5;
+  --color-calm-100: #e0f0e9;
+  --color-calm-200: #c2e1d4;
+  --color-calm-300: #97cbba;
+  --color-calm-400: #6aaf9b;
+  --color-calm-500: #4a9382;
+  --color-calm-600: #387668;
+  --color-calm-700: #2e5f55;
+  --color-calm-800: #284c45;
+  --color-calm-900: #23403a;
+
+  --color-mist: #eef3f1;
+}
+
+/* Estilo neumórfico: superfícies macias com sombra dupla (luz/sombra) */
+@utility neo {
+  background: var(--color-mist);
+  border-radius: 1.25rem;
+  box-shadow:
+    8px 8px 16px rgb(163 177 178 / 0.35),
+    -8px -8px 16px rgb(255 255 255 / 0.9);
+}
+
+@utility neo-inset {
+  background: var(--color-mist);
+  border-radius: 1rem;
+  box-shadow:
+    inset 5px 5px 10px rgb(163 177 178 / 0.35),
+    inset -5px -5px 10px rgb(255 255 255 / 0.9);
+}
+
+@utility neo-btn {
+  background: var(--color-mist);
+  border-radius: 1rem;
+  box-shadow:
+    6px 6px 12px rgb(163 177 178 / 0.4),
+    -6px -6px 12px rgb(255 255 255 / 0.9);
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+@utility neo-btn-active {
+  box-shadow:
+    inset 4px 4px 8px rgb(163 177 178 / 0.4),
+    inset -4px -4px 8px rgb(255 255 255 / 0.9);
 }
 
 html {
@@ -24,17 +68,26 @@ html {
 body {
   margin: 0;
   background:
-    radial-gradient(1200px 400px at 50% -100px, #e0e7ff 0%, transparent 70%),
+    radial-gradient(900px 500px at 85% -100px, #dff0e8 0%, transparent 65%),
+    radial-gradient(800px 420px at -10% 30%, #e8f3ec 0%, transparent 60%),
     #f4f6fa;
   color: #1e293b;
 }
 
 @utility card {
-  @apply bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6;
+  background: #fdfefd;
+  @apply rounded-2xl border border-calm-100/70 p-6;
+  box-shadow:
+    6px 6px 14px rgb(163 177 178 / 0.28),
+    -6px -6px 14px rgb(255 255 255 / 0.9);
 }
 
 @utility card-sm {
-  @apply bg-white rounded-xl border border-slate-200/80 shadow-sm p-4;
+  background: #fdfefd;
+  @apply rounded-xl border border-calm-100/70 p-4;
+  box-shadow:
+    4px 4px 10px rgb(163 177 178 / 0.25),
+    -4px -4px 10px rgb(255 255 255 / 0.9);
 }
 
 @utility section-title {
@@ -50,7 +103,7 @@ body {
 }
 
 @utility btn-primary {
-  @apply btn bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 shadow-sm;
+  @apply btn bg-calm-600 text-white hover:bg-calm-700 active:bg-calm-800 shadow-md shadow-calm-600/25;
 }
 
 @utility btn-success {
@@ -82,7 +135,7 @@ body {
 }
 
 @utility input {
-  @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-4 focus:ring-brand-500/15 focus:border-brand-500;
+  @apply w-full rounded-xl border border-calm-200/80 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-4 focus:ring-calm-500/15 focus:border-calm-500;
 }
 
 /* Preenchimento em caixa alta; e-mail sempre em caixa baixa (senha fica como digitada) */
@@ -133,5 +186,12 @@ input[type='email'].input {
 }
 
 @utility doc-row {
-  @apply bg-white rounded-xl border border-slate-200/80 shadow-sm p-4 flex flex-wrap items-center gap-3 justify-between transition hover:border-slate-300;
+  background: #fdfefd;
+  @apply rounded-xl border border-calm-100/70 p-4 flex flex-wrap items-center gap-3 justify-between transition;
+  box-shadow:
+    4px 4px 10px rgb(163 177 178 / 0.25),
+    -4px -4px 10px rgb(255 255 255 / 0.9);
+}
+@utility doc-row-hover {
+  @apply hover:border-calm-300;
 }
