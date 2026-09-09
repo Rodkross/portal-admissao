@@ -34,14 +34,18 @@ const ETAPAS = [
   { n: 3, titulo: 'Revisão e envio', desc: 'Confirme para o RH' },
 ]
 
-function Stepper({ etapa, maxEtapa, irPara, docsObrigatoriosCompletos, bloqueadaNa3 }) {
+function Stepper({ etapa, maxEtapa, irPara, docsObrigatoriosCompletos, bloqueadaNa3, fichaSalva }) {
   return (
     <div className="card text-left">
       <div className="flex items-center">
         {ETAPAS.map((e, i) => {
           const concluida = e.n < etapa
           const atual = e.n === etapa
-          const acessivel = e.n === 3 ? (maxEtapa >= 3 && docsObrigatoriosCompletos && !bloqueadaNa3) : e.n <= maxEtapa
+          const acessivel = e.n === 1
+            ? !fichaSalva // ficha salva: nunca mais acessível pelo candidato
+            : e.n === 3
+              ? (maxEtapa >= 3 && docsObrigatoriosCompletos && !bloqueadaNa3)
+              : e.n <= maxEtapa
             return (
               <div key={e.n} className={`flex items-center ${i < ETAPAS.length - 1 ? 'flex-1' : ''}`}>
                 <button
@@ -100,9 +104,13 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
   const [aceiteLgpd, setAceiteLgpd] = useState(false)
   const [aceiteVeracidade, setAceiteVeracidade] = useState(false)
   const [aceiteSalarioFamilia, setAceiteSalarioFamilia] = useState(false)
-  // wizard: etapa atual e maior etapa liberada (persistidas no candidato)
-  const [etapa, setEtapa] = useState(() => candidato?.etapa || 1)
-  const [maxEtapa, setMaxEtapa] = useState(() => candidato?.etapa || 1)
+  // wizard: etapa atual e maior etapa liberada — persistidas no candidato (Firestore é a fonte da verdade).
+  // Derivar dos dados (em vez de estado local) garante que, ao sair e voltar, o candidato retome
+  // exatamente de onde parou — sem regressar à etapa de documentos.
+  // Se a ficha já foi salva, o candidato nunca volta para a etapa 1 (mínimo etapa 2).
+  const fichaSalva = !!candidato?.ficha?.atualizadoEm
+  const etapa = Math.max(candidato?.etapa || 1, fichaSalva ? 2 : 1)
+  const maxEtapa = Math.max(etapa, candidato?.etapaMax || 0)
 
   if (!candidato) {
     return (
@@ -148,11 +156,14 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
   const temFilhosDeclarados = !!candidato.ficha?.temFilhos && (candidato.ficha?.dependentes?.length || 0) > 0
   const temDepPendentes = temFilhosDeclarados && faltantesDependentes.length > 0
 
+  // Documentação totalmente aprovada pelo RH: processo concluído — nenhuma etapa editável
+  const tudoAprovado = statusDocs.length > 0 && statusDocs.every((d) => d.status === 'aprovado')
+
   function irPara(n) {
+    if (tudoAprovado) return
+    if (n === 1 && fichaSalva) return // ficha salva: etapa não é mais acessível
     if (n === 3 && (!docsObrigatoriosCompletos || arquivos.length === 0)) return
-    setEtapa(n)
-    setMaxEtapa((m) => Math.max(m, n))
-    atualizarCandidato(candidato.id, (c) => ({ ...c, etapa: n }))
+    atualizarCandidato(candidato.id, (c) => ({ ...c, etapa: n, etapaMax: Math.max(n, c.etapaMax || 0) }))
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -163,16 +174,14 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
 
   // Controle de estados pós-envio (derivado dos dados — sobrevive a relogin):
   // - temReprovadoPosEnvio: RH reprovou algo → volta automaticamente para a etapa de documentos
-  // - reenvioPendente: candidato corrigiu tudo mas ainda NÃO reenviou → também volta, com reenvio liberado
-  // - emAnalise: enviado e sem pendências → mostra apenas a mensagem de aguardo, sem nenhum botão
+  // - emAnalise: enviado e SEM reprovados → mostra apenas a mensagem de aguardo, sem etapas nem botões
+  //   (mesmo que o candidato tenha corrigido arquivos após o envio: só volta ao wizard se o RH reprovou algo)
   const temReprovadoPosEnvio = !!candidato.envioRH && reprovados > 0
-  const reenvioPendente = !!candidato.envioRH && !temReprovadoPosEnvio
-    && arquivos.some((a) => a.status === 'pendente' && new Date(a.enviadoEm || 0) > new Date(candidato.envioRH.em || 0))
-  const podeReenviar = temReprovadoPosEnvio || reenvioPendente
-  const emAnalise = !!candidato.envioRH && !podeReenviar
+  const emAnalise = !!candidato.envioRH && !temReprovadoPosEnvio
+  const podeReenviar = temReprovadoPosEnvio
   // Em exigência (RH reprovou após o envio): a página vai direto para a etapa de documentos (2),
   // mesmo que a etapa persistida do candidato esteja em 3 — o reenvio começa sempre na documentação.
-  const etapaEfetiva = podeReenviar ? 2 : etapa
+  const etapaEfetiva = tudoAprovado ? null : (podeReenviar || (fichaSalva && etapa === 1) ? 2 : etapa)
 
   function abrirUpload(e) {
     if (emAnalise) return // documentação em análise: sem ações do candidato
@@ -427,23 +436,33 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
         </section>
       )}
 
-      {/* ---------- Documentação enviada e em análise: sem etapas, sem botões ---------- */}
-      {emAnalise ? (
+      {/* ---------- Documentação enviada e em análise / aprovada: sem etapas, sem botões ---------- */}
+      {emAnalise || tudoAprovado ? (
         <section className="card text-center py-10">
-          <div className="size-16 mx-auto rounded-full bg-emerald-50 ring-1 ring-emerald-200 flex items-center justify-center text-3xl mb-4">📨</div>
-          <h2 className="text-xl font-bold text-slate-900">Documentação enviada com sucesso!</h2>
+          <div className="size-16 mx-auto rounded-full bg-emerald-50 ring-1 ring-emerald-200 flex items-center justify-center text-3xl mb-4">{tudoAprovado ? '✅' : '📨'}</div>
+          <h2 className="text-xl font-bold text-slate-900">{tudoAprovado ? 'Documentação aprovada!' : 'Documentação enviada com sucesso!'}</h2>
           <p className="text-sm text-slate-600 mt-2 max-w-md mx-auto leading-relaxed">
-            Obrigado! O nosso RH está fazendo a <strong>validação dos seus dados e da documentação enviada</strong>.
-            Assim que a análise for concluída, nós entraremos em contato com você. 🍀
+            {tudoAprovado
+              ? 'Parabéns! Toda a sua documentação foi validada pelo nosso RH. Seu processo de admissão está concluído. 🎉'
+              : (
+                <>
+              Obrigado! O nosso RH está fazendo a <strong>validação dos seus dados e da documentação enviada</strong>.
+              Assim que a análise for concluída, nós entraremos em contato com você. 🍀
+                </>
+              )}
           </p>
-          <p className="text-xs text-emerald-700 mt-4 font-medium">⏳ Aguardando retorno do RH — você não precisa fazer mais nada por enquanto.</p>
-          <p className="text-xs text-slate-400 mt-5">
-            Enviado ao RH em {new Date(candidato.envioRH.em).toLocaleString('pt-BR')}
-          </p>
+          {!tudoAprovado && (
+            <p className="text-xs text-emerald-700 mt-4 font-medium">⏳ Aguardando retorno do RH — você não precisa fazer mais nada por enquanto.</p>
+          )}
+          {candidato.envioRH && (
+            <p className="text-xs text-slate-400 mt-5">
+              Enviado ao RH em {new Date(candidato.envioRH.em).toLocaleString('pt-BR')}
+            </p>
+          )}
         </section>
       ) : (
         <>
-      <Stepper etapa={etapaEfetiva} maxEtapa={maxEtapa} irPara={irPara} docsObrigatoriosCompletos={docsObrigatoriosCompletos} bloqueadaNa3={temReprovadoPosEnvio} />
+      <Stepper etapa={etapaEfetiva} maxEtapa={maxEtapa} irPara={irPara} docsObrigatoriosCompletos={docsObrigatoriosCompletos} bloqueadaNa3={temReprovadoPosEnvio} fichaSalva={fichaSalva} />
 
       {erroLocal && etapaEfetiva === 2 && <p className="alert-error">{erroLocal}</p>}
 
@@ -628,8 +647,7 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
       })()}
 
       {/* navegação da etapa 2 */}
-          <div className="flex justify-between items-center gap-3">
-            <button onClick={() => irPara(1)} className="btn-outline">← Voltar</button>
+          <div className="flex justify-end items-center gap-3">
             <div className="text-right">
               <button
                 onClick={() => irPara(3)}
@@ -712,14 +730,11 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
         {!candidato.ficha?.atualizadoEm && (
           <p className="text-xs text-amber-700 mt-2">Preencha e salve sua ficha de dados pessoais antes de enviar ao RH.</p>
         )}
-        {candidato.envioRH && (
-          <p className="text-xs text-slate-500 mt-2">
-            Último envio ao RH: {new Date(candidato.envioRH.em).toLocaleString('pt-BR')}
-          </p>
-        )}
+        {candidato.envioRH && podeReenviar && (
           <div className="flex justify-start mt-4 pt-4 border-t border-slate-100">
             <button onClick={() => irPara(2)} className="btn-outline btn-sm">← Corrigir documentos</button>
           </div>
+        )}
       </section>
         </>
       )}
@@ -794,7 +809,8 @@ export default function CandidatoView({ db, cpf, atualizarCandidato, notificar }
                       em: new Date().toISOString(),
                       aceiteLgpd: true,
                       aceiteVeracidade: true,
-                      aceiteSalarioFamilia: temDepPendentes ? true : undefined,
+                      // Firestore não aceita undefined — grava false quando não há dependentes pendentes
+                      aceiteSalarioFamilia: temDepPendentes ? true : false,
                     },
                   }))
                   notificar('rh', `📤 ${candidato.nome} enviou a documentação completa ao RH para validação.`)

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { urlArquivoFB } from '../lib/api'
+import { urlArquivoFB, excluirArquivoFB } from '../lib/api'
 import { maskCPF, maskPhone, waLink, statusDocumentos, documentosFaltantes, docsPara, onlyDigits, isMotociclista } from '../lib/storage'
 import { gerarFichaPDF, fichaLinhas } from '../lib/ficha'
 
@@ -394,10 +394,18 @@ export default function RhView({ db, atualizarCandidato, notificar }) {
   }
 
   function aplicar(candidato, arquivoId, status, observacao) {
+    const reprovado = status !== 'aprovado'
+    const alvoArquivo = (candidato.arquivos || []).find((a) => a.id === arquivoId)
     atualizarCandidato(candidato.id, (c) => ({
       ...c,
-      arquivos: (c.arquivos || []).map((a) => (a.id === arquivoId ? { ...a, status, observacao } : a)),
+      // Reprovado: o arquivo sai da documentação ativa — o candidato precisa INCLUIR o documento novamente
+      arquivos: reprovado
+        ? (c.arquivos || []).filter((a) => a.id !== arquivoId)
+        : (c.arquivos || []).map((a) => (a.id === arquivoId ? { ...a, status, observacao } : a)),
+      // Reinicia o ciclo de envio: candidato volta à etapa de documentos e refaz o envio (com os aceites)
+      ...(reprovado ? { envioRH: null, etapa: 2 } : {}),
     }))
+    if (reprovado && alvoArquivo) excluirArquivoFB(candidato.id, alvoArquivo.id, alvoArquivo.nomeArquivo)
     const alvo = db.candidatos.find((c) => c.id === candidato.id)
     const nomeDoc = (alvo?.arquivos || []).find((a) => a.id === arquivoId)
     const nomeCurto = (nomeDoc?.tags || []).length ? `documento (${nomeDoc.tags.join(', ')})` : 'documento'
